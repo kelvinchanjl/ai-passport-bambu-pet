@@ -1,0 +1,39 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>线线 · 网页刷机</title>
+<script type="module" src="./esp-web-tools/install-button.js"></script>
+<style>
+body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#F6F7FA;color:#1E2028}
+header{background:#161822;color:#F4F4F8;padding:28px 20px 22px}header h1{margin:0;font-size:24px}header p{margin:6px 0 0;color:#BEC4D2;font-size:14px}
+.card{background:#fff;border-radius:16px;margin:16px 18px;padding:18px 16px;max-width:560px}
+.card h2{margin:0 0 6px;font-size:17px}.card p{margin:0 0 12px;font-size:14px;color:#4A4F5C}
+ol{padding-left:20px;line-height:1.8;margin:0}.warn{color:#E87028}
+esp-web-install-button button{display:block;width:100%;height:50px;border:0;border-radius:25px;background:#00AE42;color:#fff;font-size:17px;cursor:pointer}
+esp-web-install-button.alt button{background:#2B2F3A}
+.small{font-size:12px;color:#828896}
+</style></head><body>
+<header><h1>给工牌刷上线线</h1><p>固件 v4.7.1 · 线线六种状态 · 耗材颜色跟随 · 顶部时间和电量 · FoloToy AI Passport(ESP32-C3)</p></header>
+<div class="card">
+<h2>第一次刷 / 想全部重来</h2>
+<p>完整镜像从 0x0 写入。<b class="warn">会清空工牌里的 Wi-Fi 和拓竹登录</b>,刷完要重新扫码配网。</p>
+<esp-web-install-button manifest="./manifest.json">
+  <button slot="activate">全新安装</button>
+  <span slot="unsupported"><b class="warn">这个浏览器不支持网页刷机。</b>请用电脑上的 <b>Chrome</b> 或 <b>Edge</b> 打开本页。</span>
+  <span slot="not-allowed"><b class="warn">页面必须通过 https 或 localhost 打开</b>,直接双击 html 文件不行。</span>
+</esp-web-install-button>
+</div>
+<div class="card">
+<h2>已经在用线线,只升级</h2>
+<p>只写应用分区(0x10000),<b>保留 Wi-Fi 和拓竹登录</b>,刷完自动连上。工牌上必须已经是线线固件。</p>
+<esp-web-install-button class="alt" manifest="./manifest-update.json">
+  <button slot="activate">只更新应用</button>
+  <span slot="unsupported"><b class="warn">这个浏览器不支持网页刷机。</b></span>
+  <span slot="not-allowed"><b class="warn">页面必须通过 https 或 localhost 打开。</b></span>
+</esp-web-install-button>
+</div>
+<div class="card"><ol>
+<li>用电脑版 <b>Chrome / Edge</b> 打开(手机、Safari、Firefox 不行)。</li>
+<li>用<b>能传数据的 USB 线</b>连工牌(只能充电的线识别不到串口)。</li>
+<li>点按钮,在弹窗里选工牌的串口(名字多半带 USB JTAG / usbmodem),然后点「安装」。</li>
+<li>大约 1–2 分钟,进度走完后工牌自动重启。</li>
+</ol><p class="small">选不到串口:换根线或换个 USB 口;还不行就按住工牌按键再插线进入下载模式。本页与拓竹(Bambu Lab)官方无关。</p></div>
+</body></html>

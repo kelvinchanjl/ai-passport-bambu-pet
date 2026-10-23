@@ -1,0 +1,11 @@
+{
+  "name": "线线 · AI Passport 拓竹状态屏(全新安装)",
+  "version": "4.7.1",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-C3",
+      "parts": [{ "path": "ai-passport-bambu-pet-v4.7.1-full.bin", "offset": 0 }]
+    }
+  ]
+}

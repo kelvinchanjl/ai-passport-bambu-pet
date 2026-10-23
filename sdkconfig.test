@@ -1,0 +1,9 @@
+# 内部测试版叠加配置(不要发布给用户)。用法:
+#   idf.py -B build_test -D SDKCONFIG=build_test/sdkconfig -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.test" build
+# 效果:登录 10 分钟就过期(走查到期提醒/重新扫码)、左上角红色 TEST 标、串口打印报文字段核对行、
+# 串口命令抓屏(devcap)、任务 CPU 占比统计。
+CONFIG_PET_TEST_SHORT_EXPIRY=y
+CONFIG_PET_LOG_REPORT_KEYS=y
+CONFIG_FREERTOS_USE_TRACE_FACILITY=y
+CONFIG_FREERTOS_USE_STATS_FORMATTING_FUNCTIONS=y
+CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y

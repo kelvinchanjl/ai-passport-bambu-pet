@@ -1,0 +1,22 @@
+# 构建产物
+build/
+build_*/
+managed_components/
+sdkconfig
+sdkconfig.old
+*.elf
+*.map
+# 发布附件不进 git(放 GitHub Release)
+release/
+webflash/*.bin
+# 生成的 NVS 镜像里有 Wi-Fi 密码和 token,永远不要提交
+*nvs*.bin
+*nvs*.csv
+# 日志、抓屏、临时文件
+*.log
+devcap_*.txt
+__pycache__/
+*.pyc
+.DS_Store
+.vscode/
+.idea/

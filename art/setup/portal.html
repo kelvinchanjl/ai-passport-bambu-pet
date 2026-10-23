@@ -1,0 +1,56 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>小打印头配网</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,"PingFang SC",sans-serif;background:#F6F7FA;color:#1E2028}
+header{background:#161822;color:#F4F4F8;padding:28px 20px 22px;display:flex;align-items:center;gap:14px}
+header h1{margin:0;font-size:24px}header p{margin:4px 0 0;color:#BEC4D2;font-size:14px}
+.sec{text-align:center;font-size:11px;color:#828896;margin:12px 18px}
+.card{background:#fff;border-radius:16px;margin:12px 18px;padding:18px 16px}
+.t{display:flex;align-items:center;gap:10px;font-size:17px;margin-bottom:12px}.n{width:26px;height:26px;border-radius:50%;background:#00AE42;color:#fff;display:grid;place-items:center;font-size:14px}
+label{display:block;font-size:12px;color:#828896;margin:10px 0 6px}
+input,select{width:100%;height:44px;border-radius:10px;border:1px solid #E1E4EC;background:#F2F4F8;padding:0 12px;font-size:15px}
+.row{display:flex;gap:10px}.row input{flex:1}
+.ghost{height:44px;border-radius:10px;border:2px solid #00AE42;background:#fff;color:#00AE42;padding:0 12px;font-size:13px;white-space:nowrap}
+.main{display:block;width:calc(100% - 36px);margin:18px;height:50px;border:0;border-radius:25px;background:#00AE42;color:#fff;font-size:17px}
+button:disabled{opacity:.45}.err{color:#E87028;font-size:13px;min-height:18px;margin:0 22px}
+details.card summary{font-size:15px;color:#828896;cursor:pointer}details.card .main{width:100%;margin:14px 0 0}
+.done{text-align:center;padding:60px 20px}.done h2{color:#00AE42}
+</style></head><body>
+<header><svg width="64" height="70" viewBox="0 0 80 88"><path d="M46 4c4 6-2 10 2 16" stroke="#E64646" stroke-width="4" fill="none" stroke-linecap="round"/><rect x="6" y="20" width="68" height="56" rx="14" fill="#ECEEF2"/><rect x="6" y="56" width="68" height="20" rx="10" fill="#C4C8D0"/><rect x="6" y="54" width="68" height="3" fill="#00AE42"/><rect x="16" y="30" width="48" height="24" rx="8" fill="#22242C"/><rect x="25" y="35" width="8" height="13" rx="3" fill="#00AE42"/><rect x="47" y="35" width="8" height="13" rx="3" fill="#00AE42"/><path d="M31 76h18l-5 10h-8z" fill="#C8963C"/></svg>
+<div><h1>你好呀！</h1><p>三步把我连上你的打印机</p></div></header>
+<div class="sec">只在工牌里保存登录凭证，不存密码，不经第三方服务器</div>
+<div id="app">
+<div class="card wifi"><div class="t"><span class="n">1</span>连接 Wi-Fi</div>
+<label>选择网络（仅支持 2.4G）</label><select id="ssid"><option>正在搜索…</option></select>
+<label>密码</label><input id="pw" type="password" autocomplete="off"></div>
+<div class="card"><div class="t"><span class="n">2</span>登录拓竹账号</div>
+<label>邮箱或手机号</label><input id="acct" autocomplete="username">
+<label>验证码</label><div class="row"><input id="code" inputmode="numeric" maxlength="6" placeholder="6 位数字"><button class="ghost" id="getc">获取验证码</button></div></div>
+<div class="card wifi"><div class="t"><span class="n">3</span>选择打印机</div><select id="dev" disabled><option>登录后显示</option></select></div>
+<div class="err" id="err"></div>
+<button class="main" id="go" disabled>完成绑定</button>
+<!-- 高级 · 方案 B:账号登录被滑块/二次验证拦住时用。需在拓竹 App 里把打印机切到局域网模式。用第 1 步的 Wi-Fi，跳过第 2、3 步 -->
+<details class="card" id="lanbox"><summary>高级 · 用局域网连接</summary>
+<label>打印机 IP（打印机屏幕 设置 → 网络）</label><input id="lip" inputmode="decimal" placeholder="例如 192.168.1.23">
+<label>访问码（同一页面的 8 位码）</label><input id="lcode" autocomplete="off">
+<label>序列号 SN（设置 → 设备）</label><input id="lsn" autocomplete="off" autocapitalize="characters">
+<button class="main" id="golan">用局域网绑定</button></details></div>
+<script>
+// 接口约定（开发可改）：GET /api/scan -> [{ssid,rssi}]；POST /api/code {account,ssid,password}（首次配置需先连家里 Wi-Fi）；POST /api/login {account,code} -> {devices:[{id,name}]}；POST /api/bind {ssid,password,device_id}；POST /api/bind_lan {ssid,password,ip,code,sn}（高级 · 局域网）
+// 重新扫码：打开 /?mode=reauth，只显示登录卡片，bind 时只提交 account 相关 token，不传 ssid/device
+const RE=location.search.includes('mode=reauth');
+const $=i=>document.getElementById(i),err=m=>$('err').textContent=m||'';
+const post=(u,b)=>fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.ok?r.json().catch(()=>({})):r.text().then(t=>{throw t||'出错了'}));
+if(RE){document.querySelectorAll('.wifi').forEach(e=>e.remove());document.querySelector('header p').textContent='重新登录一下拓竹账号就好';document.querySelectorAll('.n')[0].textContent='✓'}
+if(!RE)fetch('/api/scan').then(r=>r.json()).then(l=>{$('ssid').innerHTML=l.map(n=>`<option>${n.ssid}</option>`).join('')||'<option>没找到网络</option>'}).catch(()=>err('搜索 Wi-Fi 失败，刷新试试'));
+$('getc').onclick=()=>{err();let a=$('acct').value.trim();if(!a)return err('先填邮箱或手机号');
+ (RE?Promise.resolve():Promise.resolve(err('工牌正在连家里的 Wi-Fi，手机可能断开几秒，属于正常现象，稍等再回到这个页面'))).then(()=>post('/api/code',RE?{account:a}:{account:a,ssid:$('ssid').value,password:$('pw').value})).then(()=>{err();let s=60,b=$('getc');b.disabled=1;let t=setInterval(()=>{b.textContent=s--+'s';if(s<0){clearInterval(t);b.disabled=0;b.textContent='重新获取'}},1000)}).catch(err)};
+$('code').oninput=e=>{if(e.target.value.length==6)post('/api/login',{account:$('acct').value.trim(),code:e.target.value}).then(r=>{if(RE){$('go').disabled=0;err();return}let d=$('dev');d.disabled=0;d.innerHTML=(r.devices||[]).map(x=>`<option value="${x.id}">${x.name}</option>`).join('');$('go').disabled=0;err()}).catch(err)};
+const WAIT='<div class="done"><svg width="90" height="100" viewBox="0 0 80 88"><rect x="6" y="20" width="68" height="56" rx="14" fill="#ECEEF2"/><rect x="6" y="54" width="68" height="3" fill="#00AE42"/><rect x="16" y="30" width="48" height="24" rx="8" fill="#22242C"/><path d="M24 42q5-6 10 0M46 42q5-6 10 0" stroke="#00AE42" stroke-width="3" fill="none"/><path d="M31 76h18l-5 10h-8z" fill="#C8963C"/></svg><h2>快好啦！</h2><p>工牌正在连家里的 Wi-Fi，手机可能会断开几秒，属于正常现象。</p><p style="font-size:18px;color:#1E2028"><b>线线收到啦，正在连上拓竹云～</b></p><p style="color:#828896;font-size:13px">之后这个页面可以直接关掉，不用等它刷新。</p></div>';
+$('go').onclick=()=>{err();$('go').disabled=1;let b=RE?{reauth:true}:{ssid:$('ssid').value,password:$('pw').value,device_id:$('dev').value};
+ // 先切到等待屏：成功与否以工牌屏幕为准，手机断开不算失败
+ post('/api/bind',b).catch(()=>{});$('app').innerHTML=WAIT};
+$('golan').onclick=()=>{err();let b={ssid:$('ssid').value,password:$('pw').value,ip:$('lip').value.trim(),code:$('lcode').value.trim(),sn:$('lsn').value.trim().toUpperCase()};
+ if(!b.ip||!b.code||!b.sn)return err('IP、访问码、序列号都要填');$('golan').disabled=1;
+ post('/api/bind_lan',b).then(()=>{$('app').innerHTML=WAIT}).catch(e=>{$('golan').disabled=0;err(e)})};
+if(RE)$('lanbox').remove();
+</script></body></html>

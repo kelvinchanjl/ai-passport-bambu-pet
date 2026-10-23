@@ -1,0 +1,34 @@
+menu "Desk Pet (Bambu)"
+    config PET_WIFI_SSID
+        string "Wi-Fi SSID (fallback when NVS empty)"
+        default ""
+    config PET_WIFI_PASS
+        string "Wi-Fi password"
+        default ""
+    config PET_BAMBU_UID
+        string "Bambu user id (digits only, without u_)"
+        default ""
+    config PET_BAMBU_TOKEN
+        string "Bambu access token"
+        default ""
+    config PET_BAMBU_SN
+        string "Printer serial number"
+        default ""
+    config PET_BAMBU_HOST
+        string "Bambu cloud MQTT host"
+        default "cn.mqtt.bambulab.com"
+    config PET_TEST_SHORT_EXPIRY
+        bool "INTERNAL TEST: short token expiry (10 min) + TEST badge"
+        default n
+        help
+            Internal acceptance build only. After a successful bind/re-login the stored expiry is
+            set to now+10 min, the reminder shows minutes left in the last 3 minutes (once per
+            token), expiry opens the re-scan screen, and a TEST badge is drawn. Never ship.
+    config PET_LOG_REPORT_KEYS
+        bool "Log which report fields arrive (v4.2 field check, no values/serials)"
+        default n
+        help
+            Logs one line per MQTT report listing whether subtask_name / layer_num / mc_percent /
+            device.extruder / device.ctc / ams / vir_slot were present, plus the parsed detail-page
+            values every 30 s. Enabled in the test build to verify FIELDS_v4.2.md on a real printer.
+endmenu

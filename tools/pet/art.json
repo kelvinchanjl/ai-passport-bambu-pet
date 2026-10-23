@@ -1,0 +1,33 @@
+{
+  "_doc": "Per state: ordered source folders (first existing wins), relative to --art-root (default <repo>/art). A folder holds N.png (0..N-1) plus meta.json (anchor/dx/dy/frame_ms/filament_key_color). #FF00FF = filament key colour (recoloured at runtime), #C000C0 = side-face key (filament x0.7).",
+  "default_frame_ms": 140,
+  "states": {
+    "idle": [
+      "pet/idle"
+    ],
+    "print": [
+      "pet/printing"
+    ],
+    "done": [
+      "pet/done"
+    ],
+    "pause": [
+      "pet/pause"
+    ],
+    "empty": [
+      "pet/empty"
+    ],
+    "fail": [
+      "pet/fail"
+    ],
+    "idle_stretch": [
+      "pet/idle_stretch"
+    ]
+  },
+  "sprite_bg": [
+    0,
+    0,
+    0
+  ],
+  "scale": 1.0
+}
