@@ -4,8 +4,8 @@
 
 | 情况 | 用哪个文件 | 写到哪里 | 配网信息 |
 | --- | --- | --- | --- |
-| 第一次刷线线,或想彻底重来 | `ai-passport-bambu-pet-v4.7.1-full.bin`(完整镜像) | `0x0` | **会被清空**,刷完要重新扫码配网 |
-| 工牌上已经是线线,只升级 | `ai-passport-bambu-pet-v4.7.1-app.bin`(只有应用) | `0x10000` | **保留**,刷完自动连上 |
+| 第一次刷线线,或想彻底重来 | `ai-passport-bambu-pet-v4.7.2-full.bin`(完整镜像) | `0x0` | **会被清空**,刷完要重新扫码配网 |
+| 工牌上已经是线线,只升级 | `ai-passport-bambu-pet-v4.7.2-app.bin`(只有应用) | `0x10000` | **保留**,刷完自动连上 |
 
 文件都在 GitHub Release 里,`SHA256SUMS.txt` 里有校验值。
 
@@ -28,21 +28,21 @@
 
 刷机页是 [ESP Web Tools](https://github.com/esphome/esp-web-tools) 做的,已经内置在 zip 里,不依赖外网。
 
-1. 下载 `webflash-v4.7.1.zip` 并解压。
+1. 下载 `webflash-v4.7.2.zip` 并解压。
 2. 浏览器规定网页刷机只能在 https 或 localhost 下打开,直接双击 `index.html` 不行。在解压出的目录里开一个本地服务:
    ```bash
-   cd webflash-v4.7.1
+   cd webflash-v4.7.2
    python3 -m http.server 8000
    ```
 3. 用电脑上的 **Chrome 或 Edge** 打开 <http://localhost:8000>(Safari、Firefox、手机浏览器都不支持 Web Serial)。
 4. 用**能传数据**的 USB-C 线把工牌接到电脑。
 5. 按需要点:
    - **「全新安装」**:写完整镜像。弹窗会问要不要先擦除整片 Flash,选不选都会清掉配网信息。
-   - **「只更新应用」**:只写 `0x10000`,保留配网。
+   - **「只更新应用」**:只写 `0x10000`,保留配网。弹窗里出现「Erase device」勾选框时**不要勾**,直接点 Next(勾了会整片擦除,工牌开不了机,只能再用「全新安装」救回来)。
 6. 在弹窗里选工牌的串口(名字一般带 `USB JTAG` 或 `usbmodem`,Windows 上是 `COMx`),点「安装」。
 7. 进度走完(1–2 分钟)工牌会自动重启。刷完在终端按 `Ctrl+C` 关掉本地服务。
 
-想放到网上给别人用:把 `webflash-v4.7.1/` 里的全部文件放到一个开了 GitHub Pages 的仓库(或任意 https 静态托管),打开对应网址即可,步骤同上。
+想放到网上给别人用:把 `webflash-v4.7.2/` 里的全部文件放到一个开了 GitHub Pages 的仓库(或任意 https 静态托管),打开对应网址即可,步骤同上。
 
 ## 方法二:esptool 命令行
 
@@ -58,7 +58,7 @@ python3 -m pip install --user esptool      # esptool v4.x 或 v5.x 都可以
 PORT=/dev/cu.usbmodem1101          # 换成你的串口
 python3 -m esptool --chip esp32c3 -p "$PORT" -b 460800 \
   write_flash --flash_mode dio --flash_freq 80m --flash_size 8MB \
-  0x0 ai-passport-bambu-pet-v4.7.1-full.bin
+  0x0 ai-passport-bambu-pet-v4.7.2-full.bin
 ```
 
 想彻底干净(比如之前刷过别的固件、NVS 里有旧数据),先擦一次再写:
@@ -72,7 +72,7 @@ python3 -m esptool --chip esp32c3 -p "$PORT" erase_flash
 ```bash
 python3 -m esptool --chip esp32c3 -p "$PORT" -b 460800 \
   write_flash --flash_mode dio --flash_freq 80m --flash_size 8MB \
-  0x10000 ai-passport-bambu-pet-v4.7.1-app.bin
+  0x10000 ai-passport-bambu-pet-v4.7.2-app.bin
 ```
 
 **用自己编译的产物分开写**(写 bootloader、分区表和应用三段,不碰 `0x9000` 的 NVS,配网会保留):

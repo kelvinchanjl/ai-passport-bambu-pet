@@ -11,7 +11,7 @@ esp-web-install-button button{display:block;width:100%;height:50px;border:0;bord
 esp-web-install-button.alt button{background:#2B2F3A}
 .small{font-size:12px;color:#828896}
 </style></head><body>
-<header><h1>给工牌刷上线线</h1><p>固件 v4.7.1 · 线线六种状态 · 耗材颜色跟随 · 顶部时间和电量 · FoloToy AI Passport(ESP32-C3)</p></header>
+<header><h1>给工牌刷上线线</h1><p>固件 v4.7.2 · 线线六种状态 · 耗材颜色跟随 · 顶部时间和电量 · FoloToy AI Passport(ESP32-C3)</p></header>
 <div class="card">
 <h2>第一次刷 / 想全部重来</h2>
 <p>完整镜像从 0x0 写入。<b class="warn">会清空工牌里的 Wi-Fi 和拓竹登录</b>,刷完要重新扫码配网。</p>
@@ -23,7 +23,7 @@ esp-web-install-button.alt button{background:#2B2F3A}
 </div>
 <div class="card">
 <h2>已经在用线线,只升级</h2>
-<p>只写应用分区(0x10000),<b>保留 Wi-Fi 和拓竹登录</b>,刷完自动连上。工牌上必须已经是线线固件。</p>
+<p>只写应用分区(0x10000),<b>保留 Wi-Fi 和拓竹登录</b>,刷完自动连上。工牌上必须已经是线线固件。<br><b class="warn">弹窗里出现「Erase device」勾选框时,不要勾</b>,直接点 Next,否则会清空整片 Flash、工牌开不了机。</p>
 <esp-web-install-button class="alt" manifest="./manifest-update.json">
   <button slot="activate">只更新应用</button>
   <span slot="unsupported"><b class="warn">这个浏览器不支持网页刷机。</b></span>

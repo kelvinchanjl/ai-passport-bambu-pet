@@ -40,7 +40,7 @@ tools/validate.sh              # 两个都跑
 
 ```bash
 tools/validate.sh --firmware
-tools/make_release.sh 4.7.1          # 生成 release/ 下的 app.bin、full.bin、webflash zip 和 SHA256SUMS.txt
+tools/make_release.sh 4.7.2          # 生成 release/ 下的 app.bin、full.bin、webflash zip 和 SHA256SUMS.txt
 ```
 
 `release/` 不进 git,把里面的文件上传到 GitHub Release。

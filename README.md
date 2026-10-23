@@ -52,7 +52,7 @@
 
 ## 快速开始
 
-1. 到 [Releases](../../releases) 下载 `webflash-v4.7.1.zip` 并解压。
+1. 到 [Releases](../../releases) 下载 `webflash-v4.7.2.zip` 并解压。
 2. 在解压出的目录里运行 `python3 -m http.server 8000`,用 Chrome 打开 <http://localhost:8000>。
 3. 点「全新安装」,选工牌的串口,等 1–2 分钟。
 4. 工牌重启后屏幕上有二维码。用手机扫码连上热点 `Passport-XXXX`,在弹出的网页里选家里的 Wi-Fi、填拓竹账号收验证码、勾选打印机。

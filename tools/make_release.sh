@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 从 build/ 生成 GitHub Release 附件:应用镜像、完整镜像、网页刷机 zip、SHA256SUMS。
-# 用法: tools/make_release.sh 4.7.1 [输出目录,默认 release/]
+# 用法: tools/make_release.sh 4.7.2 [输出目录,默认 release/]
 set -euo pipefail
 ver="${1:?版本号,例如 4.7.1}"
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$root"
@@ -11,7 +11,7 @@ name="ai-passport-bambu-pet-v${ver}"
 cp "$app" "$out/${name}-app.bin"; cp "$full" "$out/${name}-full.bin"
 wf="$(mktemp -d)/webflash-v${ver}"; mkdir -p "$wf"
 cp -r webflash/index.html webflash/manifest.json webflash/manifest-update.json webflash/esp-web-tools "$wf/"
-sed -i "s/v4\.7\.1/v${ver}/g; s/\"version\": \"[^\"]*\"/\"version\": \"${ver}\"/" "$wf/index.html" "$wf/manifest.json" "$wf/manifest-update.json"
+sed -i "s/v[0-9]\+\.[0-9]\+\.[0-9]\+/v${ver}/g; s/\"version\": \"[^\"]*\"/\"version\": \"${ver}\"/" "$wf/index.html" "$wf/manifest.json" "$wf/manifest-update.json"
 sed -i "s/ai-passport-bambu-pet-v[0-9.]*-/${name}-/" "$wf/manifest.json" "$wf/manifest-update.json"
 cp "$out/${name}-app.bin" "$out/${name}-full.bin" "$wf/"
 python3 - "$wf" "$root/$out/webflash-v${ver}.zip" <<'PY'
