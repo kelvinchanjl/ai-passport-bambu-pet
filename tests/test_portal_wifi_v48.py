@@ -163,4 +163,16 @@ for w in (390, 320):
         assert r["wait"] and r["iw"] == w, r
         assert r["sw"] <= r["iw"] and r["bw"] <= r["iw"] and r["hr"] <= r["iw"] and r["hl"] >= 0, ("横向溢出", w, name, r)
 print("10 D1 等待页长 SSID 不溢出(390/320)ok")
+# 11) D2:列表滚到底后删除失败,提示条要在视口内(出错后 scrollTo(0,0));390 和 320 宽、视口高 500
+five_items = [{"ssid": "N%d" % i, "connected": i == 0, **({"rssi": -50} if i == 0 else {})} for i in range(5)]
+for w in (390, 320):
+    for fail in ("http", "network"):
+        r = run("""q('#hm').click();await sleep(50);scrollTo(0,99999);await sleep(20);const y0=scrollY;
+ __M['/api/wifi_del']=()=>%s;document.querySelectorAll('.dl')[4].click();q('#ov .dng').click();await sleep(100);
+ const b=q('#ler .er').getBoundingClientRect();return {iw:innerWidth,ih:innerHeight,y0:y0,y1:scrollY,top:b.top,bottom:b.bottom,txt:q('#ler .er span').textContent}""" %
+                ("resp(false,'至少留 1 个 Wi-Fi',409)" if fail == "http" else "Promise.reject(new TypeError('Failed to fetch'))"),
+                pre=lst(five_items), size=(w, 500))
+        assert r["iw"] == w and r["ih"] == 500 and r["y0"] > 0, ("页面应该先滚下去了", r)
+        assert r["top"] >= 0 and r["bottom"] <= r["ih"] and r["y1"] == 0, ("提示条不在视口内", w, fail, r)
+print("11 D2 删除失败提示条在视口内(390/320,http/断网两种)ok")
 print("test_portal_wifi_v48 OK")

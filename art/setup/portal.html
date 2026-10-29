@@ -113,7 +113,7 @@ $('golan').onclick=()=>{err();let b={ssid:$('ssid').value,password:$('pw').value
 let L={items:[],max:5},MG=false;
 const loadList=()=>fetch('/api/wifi_list').then(r=>r.json());
 const sg=r=>r>-60?3:r>-75?2:1,lv=r=>r>-60?'信号强':r>-75?'信号中':'信号弱';
-const showEr=(id,t)=>{const c=$(id);c.textContent='';if(!t)return;const d=el('div','er');d.append(el('b',0,'!'),el('span',0,t));c.append(d)};
+const showEr=(id,t)=>{const c=$(id);c.textContent='';if(!t)return;const d=el('div','er');d.append(el('b',0,'!'),el('span',0,t));c.append(d);scrollTo(0,0)};   // 出错后回到顶部，提示条才看得见
 function toast(a,s,z){const d=el('div','ts',a);d.append('「',el('i',0,s),'」'+(z||''));document.body.append(d);setTimeout(()=>d.remove(),2500)}
 function renderList(){const n=L.items.length,full=n>=L.max;$('lbn').style.display=MG?'':'none';$('lt').textContent='已保存的 Wi-Fi ('+n+'/'+L.max+')';
  const R=$('lrows');R.textContent='';
