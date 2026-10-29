@@ -6,17 +6,18 @@
 //   POST /api/login {account,code}       -> {devices:[{id,name}]}
 //   POST /api/bind  {ssid,password,device_ids:[..≤4]} (旧版 device_id 仍接受) | {reauth:true}
 //   POST /api/bind_lan {ssid,password,ip,code,sn}   (方案 B,局域网)
-// v4.8「只管 Wi-Fi、不重登拓竹」(页面 /?mode=wifi;接口在任何配网模式下都可用):
-//   GET  /api/wifis                      -> {max,wifis:[{ssid}]}   已存 Wi-Fi 列表,**永远不回显密码**
-//   POST /api/wifi_add {ssid,password}   新增;同名 = 更新密码;满 5 组拒绝。保存即写 NVS(旧键 ssid/pass 镜像第 0 组)
-//   POST /api/wifi_del {ssid}            删除;只剩最后一组时拒绝
-//   POST /api/wifi_done {}               重启工牌,按新列表连网
+// v4.8 Wi-Fi 管理(页面 入口页「管理 Wi-Fi」;接口在任何配网模式下都可用;完整约定见 docs/setup.md):
+//   GET  /api/wifi_list                  -> {configured,max,migrated,items:[{ssid,connected[,rssi]}]}  不扫描、不回密码
+//   POST /api/wifi_add {ssid,password}   试连最多 15 s,连上才保存;同名 = 更新密码;400/409/502 + 中文文案
+//   POST /api/wifi_del {ssid}            409 = 只剩最后一个
+//   POST /api/wifi_done {}               重启工牌
 //   不支持隐藏 SSID(开机扫描匹配,扫不到的不会被尝试)。
 #include "lwip/inet.h"
 #include "setup_portal.h"
 #include "sdkconfig.h"
 #include "bambu_api.h"
 #include "net.h"
+#include "wifi_roam.h"
 #include "cJSON.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -222,6 +223,7 @@ static esp_err_t h_bind(httpd_req_t *r) {
         strlcpy(c->refresh, s_tok->refresh, sizeof c->refresh);
         c->token_exp = exp;
         e = app_config_save_all(c);
+        if (e == ESP_OK) app_config_wifi_bound(c);   // v4.8:把刚选的 Wi-Fi 写成第 0 组(新用户不该看到"已自动加入"横幅)
         if (n > 1) snprintf(s_bound_name, sizeof s_bound_name, "%d 台打印机", n);
         else snprintf(s_bound_name, sizeof s_bound_name, "%s", c->dev_name);
     }
@@ -233,45 +235,97 @@ static esp_err_t h_bind(httpd_req_t *r) {
     return ok_json(r, "{}");
 }
 
-// ---- v4.8 Wi-Fi 列表管理 ----
-static esp_err_t wifi_fail(httpd_req_t *r, wifi_res_t e) {
-    switch (e) {
-    case WIFI_E_INVALID: return fail(r, "400 Bad Request", "Wi-Fi 名称 1–32 字节,密码最长 64 字节");
-    case WIFI_E_FULL: return fail(r, "400 Bad Request", "最多保存 5 个 Wi-Fi,请先删除一个");
-    case WIFI_E_NOTFOUND: return fail(r, "404 Not Found", "没有这个 Wi-Fi");
-    case WIFI_E_LAST: return fail(r, "400 Bad Request", "至少要留一个 Wi-Fi;要换网请先添加新的,再删旧的");
-    default: return fail(r, "500 Internal Server Error", "保存失败");
-    }
-}
-static esp_err_t h_wifis(httpd_req_t *r) {
+// ---- v4.8 Wi-Fi 列表管理(接口见文件头)----
+static const char MSG_FULL[] = "最多保存 5 个,先删掉一个再添加";
+static const char MSG_LAST[] = "至少留 1 个 Wi-Fi,工牌要靠它上网;想换网络,先添加新的再删旧的";
+static const char MSG_SHORT[] = "密码至少 8 位;没有密码的网络请留空";
+static const char MSG_BADPW[] = "密码不对,再核对一下(区分大小写)";
+static const char MSG_NOAP[] = "连不上这个 Wi-Fi,靠近路由器再试试(只支持 2.4G)";
+
+// GET /api/wifi_list:只读 NVS 和当前 STA 状态,不扫描(扫描会打断 STA 链路),永远不回密码。
+static esp_err_t h_wifi_list(httpd_req_t *r) {
     wifi_slots_t *w = malloc(sizeof *w);
     if (!w) return fail(r, "500 Internal Server Error", "内存不足");
     app_config_wifi_load(w, s_cfg);   // NVS 异常时 w 里至少有旧键那一组
-    cJSON *o = cJSON_CreateObject(), *arr = cJSON_AddArrayToObject(o, "wifis");
+    char cur[WIFI_SSID_MAX + 1] = ""; int rssi = 0;
+    bool on = net_sta_info(cur, sizeof cur, &rssi);
+    cJSON *o = cJSON_CreateObject(), *arr = cJSON_CreateArray();
+    cJSON_AddBoolToObject(o, "configured", app_config_cloud_ready(s_cfg) || app_config_lan_ready(s_cfg));
     cJSON_AddNumberToObject(o, "max", WIFI_SLOTS_MAX);
-    for (int i = 0; i < w->n; i++) { cJSON *e = cJSON_CreateObject(); cJSON_AddStringToObject(e, "ssid", w->s[i].ssid); cJSON_AddItemToArray(arr, e); }   // 只给 SSID
+    cJSON_AddBoolToObject(o, "migrated", app_config_wifi_migrated());
+    for (int i = 0; i < w->n; i++) {
+        cJSON *e = cJSON_CreateObject();
+        bool c = on && strcmp(cur, w->s[i].ssid) == 0;
+        cJSON_AddStringToObject(e, "ssid", w->s[i].ssid);   // 只给 SSID;cJSON 负责 JSON 转义
+        cJSON_AddBoolToObject(e, "connected", c);
+        if (c) cJSON_AddNumberToObject(e, "rssi", rssi);    // 只有当前连着的那个有 rssi
+        cJSON_AddItemToArray(arr, e);
+    }
+    cJSON_AddItemToObject(o, "items", arr);
     free(w);
-    char *s = cJSON_PrintUnformatted(o); cJSON_Delete(o);
-    if (!s) return fail(r, "500 Internal Server Error", "内存不足");
-    esp_err_t e = ok_json(r, s); free(s);
+    char *js = cJSON_PrintUnformatted(o); cJSON_Delete(o);
+    if (!js) return fail(r, "500 Internal Server Error", "内存不足");
+    esp_err_t e = ok_json(r, js); free(js);
     return e;
 }
-static esp_err_t h_wifi_edit(httpd_req_t *r, bool add) {
+
+// POST /api/wifi_add {ssid,password}:先用这组凭证试连(最多 15 s),连上才写 NVS;失败不保存、并恢复原来的连接。
+//   400 口令格式不对 | 409 已满(新 SSID 且已有 5 组;同名 = 更新口令,不占名额) | 502 密码不对 / 连不上(按 STA 断开原因码区分)
+//   成功后留在刚连上的新网络(不立刻切回信号最强的,避免手机马上又被踢一次);下次开机/掉线才重新按信号选。
+static esp_err_t h_wifi_add(httpd_req_t *r) {
+    cJSON *j = read_json(r);
+    if (!j) return fail(r, "400 Bad Request", "请求格式不对");
+    char ssid[WIFI_SSID_MAX + 1], pass[WIFI_PASS_MAX + 1];
+    strlcpy(ssid, jstr(j, "ssid"), sizeof ssid); strlcpy(pass, jstr(j, "password"), sizeof pass);
+    bool too_long = strlen(jstr(j, "ssid")) > WIFI_SSID_MAX || strlen(jstr(j, "password")) > WIFI_PASS_MAX;
+    cJSON_Delete(j);
+    if (too_long || !wifi_slots_valid(ssid, pass)) return fail(r, "400 Bad Request", "请先选择要添加的网络");
+    if (!wifi_pass_ok(pass)) return fail(r, "400 Bad Request", MSG_SHORT);
+    wifi_slots_t *w = malloc(sizeof *w);
+    if (!w) return fail(r, "500 Internal Server Error", "内存不足");
+    app_config_wifi_load(w, s_cfg);
+    if (wifi_slots_find(w, ssid) < 0 && w->n >= WIFI_SLOTS_MAX) { free(w); return fail(r, "409 Conflict", MSG_FULL); }
+    int reason = 0;
+    if (!net_try_connect(ssid, pass, 15000, &reason)) {
+        net_slots_apply(w, true);   // 回到原来的选网逻辑
+        free(w);
+        ESP_LOGW(TAG, "wifi_add: connect failed, reason=%d", reason);
+        return fail(r, "502 Bad Gateway", wifi_fail_is_password(reason) ? MSG_BADPW : MSG_NOAP);
+    }
+    wifi_res_t res = wifi_slots_add(w, ssid, pass);
+    esp_err_t e = res == WIFI_OK ? app_config_wifi_save(w) : ESP_FAIL;
+    if (e == ESP_OK) app_config_wifi_clear_migrated();
+    net_slots_apply(w, false);   // 保持在新网络上,只把列表换成新的
+    free(w);
+    if (e != ESP_OK) return fail(r, "500 Internal Server Error", "已连上,但保存失败");
+    return ok_json(r, "{}");
+}
+
+// POST /api/wifi_del {ssid}:按 SSID 删;最后一个不能删(409)。删的是当前连着的 → 立刻按剩下的重新选网。
+static esp_err_t h_wifi_del(httpd_req_t *r) {
     cJSON *j = read_json(r);
     if (!j) return fail(r, "400 Bad Request", "请求格式不对");
     wifi_slots_t *w = malloc(sizeof *w);
     if (!w) { cJSON_Delete(j); return fail(r, "500 Internal Server Error", "内存不足"); }
     app_config_wifi_load(w, s_cfg);
-    wifi_res_t res = add ? wifi_slots_add(w, jstr(j, "ssid"), jstr(j, "password")) : wifi_slots_delete(w, jstr(j, "ssid"));
-    esp_err_t e = res == WIFI_OK ? app_config_wifi_save(w) : ESP_OK;
-    cJSON_Delete(j); free(w);
-    if (res != WIFI_OK) return wifi_fail(r, res);
-    if (e != ESP_OK) return fail(r, "500 Internal Server Error", "保存失败");
-    return ok_json(r, "{}");
+    char cur[WIFI_SSID_MAX + 1] = ""; int rssi = 0;
+    bool on = net_sta_info(cur, sizeof cur, &rssi);
+    wifi_res_t res = wifi_slots_delete(w, jstr(j, "ssid"));
+    bool was_cur = on && strcmp(cur, jstr(j, "ssid")) == 0;
+    cJSON_Delete(j);
+    if (res != WIFI_OK) {
+        free(w);
+        return res == WIFI_E_LAST ? fail(r, "409 Conflict", MSG_LAST) : res == WIFI_E_NOTFOUND ? fail(r, "404 Not Found", "没有这个 Wi-Fi") : fail(r, "400 Bad Request", "请求格式不对");
+    }
+    esp_err_t e = app_config_wifi_save(w);
+    if (e == ESP_OK) { app_config_wifi_clear_migrated(); net_slots_apply(w, was_cur); }
+    free(w);
+    return e == ESP_OK ? ok_json(r, "{}") : fail(r, "500 Internal Server Error", "保存失败");
 }
-static esp_err_t h_wifi_add(httpd_req_t *r) { return h_wifi_edit(r, true); }
-static esp_err_t h_wifi_del(httpd_req_t *r) { return h_wifi_edit(r, false); }
+
+// POST /api/wifi_done:退出配置模式(重启工牌,按新列表连网)
 static esp_err_t h_wifi_done(httpd_req_t *r) {
+    app_config_wifi_clear_migrated();
     xTaskCreate(reboot_task, "reboot", 2048, NULL, 2, NULL);
     return ok_json(r, "{}");
 }
@@ -303,6 +357,7 @@ static esp_err_t h_bind_lan(httpd_req_t *r) {
     strlcpy(c->printers[0].name, "局域网打印机", sizeof c->printers[0].name);
     c->printers[0].product[0] = 0;
     esp_err_t e = app_config_save_all(c);
+    if (e == ESP_OK) app_config_wifi_bound(c);
     cJSON_Delete(j);
     if (e != ESP_OK) return fail(r, "500 Internal Server Error", "保存失败");
     snprintf(s_bound_name, sizeof s_bound_name, "%s", c->dev_name);
@@ -353,7 +408,7 @@ bool setup_portal_start(app_config_t *cfg, bool reauth) {
         { .uri = "/api/login", .method = HTTP_POST, .handler = h_login },
         { .uri = "/api/bind", .method = HTTP_POST, .handler = h_bind },
         { .uri = "/api/bind_lan", .method = HTTP_POST, .handler = h_bind_lan },
-        { .uri = "/api/wifis", .method = HTTP_GET, .handler = h_wifis },
+        { .uri = "/api/wifi_list", .method = HTTP_GET, .handler = h_wifi_list },
         { .uri = "/api/wifi_add", .method = HTTP_POST, .handler = h_wifi_add },
         { .uri = "/api/wifi_del", .method = HTTP_POST, .handler = h_wifi_del },
         { .uri = "/api/wifi_done", .method = HTTP_POST, .handler = h_wifi_done },

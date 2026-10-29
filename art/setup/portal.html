@@ -8,34 +8,56 @@ header h1{margin:0;font-size:24px}header p{margin:4px 0 0;color:#BEC4D2;font-siz
 .t{display:flex;align-items:center;gap:10px;font-size:17px;margin-bottom:12px}.n{width:26px;height:26px;border-radius:50%;background:#00AE42;color:#fff;display:grid;place-items:center;font-size:14px}
 label{display:block;font-size:12px;color:#828896;margin:10px 0 6px}
 input,select{width:100%;height:44px;border-radius:10px;border:1px solid #E1E4EC;background:#F2F4F8;padding:0 12px;font-size:15px}
-.row{display:flex;gap:10px}.row input{flex:1}
+.row{display:flex;gap:10px}.row input,.row select{flex:1;min-width:0}
 .ghost{height:44px;border-radius:10px;border:2px solid #00AE42;background:#fff;color:#00AE42;padding:0 12px;font-size:13px;white-space:nowrap}
 .main{display:block;width:calc(100% - 36px);margin:18px;height:50px;border:0;border-radius:25px;background:#00AE42;color:#fff;font-size:17px}
-button:disabled{opacity:.45}.err{color:#E87028;font-size:13px;min-height:18px;margin:0 22px}
+button:disabled,select:disabled{opacity:.45}.err{color:#E87028;font-size:13px;min-height:18px;margin:0 22px}
 details.card summary{font-size:15px;color:#828896;cursor:pointer}details.card .main{width:100%;margin:14px 0 0}
 .done{text-align:center;padding:60px 20px}.done h2{color:#00AE42}
-.wrow{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #EEF0F5;font-size:15px}.wrow span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wrow .ghost{height:34px}
-.tow{display:block;text-align:center;font-size:13px;color:#00AE42;margin:2px 18px 0}.hint{font-size:12px;color:#828896;margin-top:10px}
+button{font-family:inherit}
+.bk{min-width:44px;display:flex;align-items:center;height:44px;margin:6px 18px 0;padding:0;border:0;background:none;color:#00753A;font-size:15px}
+.hn{font-size:12px;color:#6B7180;margin:4px 0 8px;line-height:1.5}
+.rw{display:flex;align-items:center;gap:8px;min-height:68px;padding:10px 0;border-top:1px solid #EEF0F5}
+.nm{flex:1;min-width:0}.nm b{display:block;font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tg{display:flex;align-items:center;gap:6px;margin-top:5px}
+.tag{height:22px;line-height:22px;padding:0 8px;border-radius:11px;font-size:12px;background:#EEF0F5;color:#5E6573}.on{background:#E3F5EA;color:#00753A}
+.sg{display:inline-flex;align-items:flex-end;gap:2px;height:12px}.sg i{width:3px;border-radius:1px;background:#C9CDD8}.sg i:nth-child(1){height:5px}.sg i:nth-child(2){height:8px}.sg i:nth-child(3){height:12px}
+.l3 i,.l2 i:nth-child(-n+2),.l1 i:first-child{background:#00AE42}
+.dl{min-width:56px;height:44px;border-radius:10px;border:1px solid #E1E4EC;background:#fff;color:#D13030;font-size:14px}
+.add{width:100%;height:48px;margin-top:6px;font-size:15px}.cap{text-align:center;font-size:12px;color:#6B7180;margin:8px 0 0}
+.bn{display:flex;align-items:center;gap:8px;margin:12px 18px 0;padding:2px 4px 2px 14px;border-radius:12px;background:#E3F5EA;color:#1F6B3E;font-size:13px}
+.bn span{flex:1}.bn button{width:44px;height:44px;border:0;background:none;color:#1F6B3E;font-size:16px}
+.lk{display:block;width:calc(100% - 36px);height:44px;margin:4px 18px;border:0;background:none;color:#5E6573;font-size:15px}
+.pw{position:relative}.pw input{padding-right:64px}.pw button{position:absolute;right:0;top:0;width:60px;height:44px;border:0;background:none;color:#00753A;font-size:14px}
+.er{display:flex;gap:8px;margin:12px 18px 0;padding:10px 12px;border-radius:10px;background:#FDF1E8;color:#B5530F;font-size:13px;line-height:1.5}.er b{flex:none;width:18px;height:18px;margin-top:1px;border-radius:50%;background:#E87028;color:#fff;text-align:center;font-size:12px;line-height:18px}
+.ent{display:flex;align-items:center;gap:14px;width:calc(100% - 36px);min-height:84px;border:0;text-align:left;font-size:17px;color:#1E2028}
+.ent .ic{flex:none;width:44px;height:44px;border-radius:50%;background:#E3F5EA;display:grid;place-items:center}.ic svg{width:22px;height:22px;fill:none;stroke:#00753A;stroke-width:2.4;stroke-linecap:round}.ent div{flex:1;min-width:0}
+.ent small{display:block;margin-top:3px;font-size:13px;color:#6B7180}.ent u{text-decoration:none;font-size:22px;color:#B0B5C2}
+.sp{width:40px;height:40px;margin:0 auto 18px;border:4px solid #E1E4EC;border-top-color:#00AE42;border-radius:50%;animation:r 1s linear infinite}@keyframes r{to{transform:rotate(360deg)}}@media(prefers-reduced-motion){.sp{animation:none}}
+.tip{text-align:left;background:#fff;border-radius:16px;margin:18px 0 0;padding:14px 16px;font-size:14px;line-height:1.6;color:#5E6573}.tip p{margin:0 0 6px}
+.ov{position:fixed;inset:0;background:rgba(22,24,34,.5);align-items:flex-end}
+.sh{width:100%;background:#fff;border-radius:20px 20px 0 0;padding:10px 20px 24px}.sh:before{content:"";display:block;width:36px;height:4px;border-radius:2px;background:#D5D9E2;margin:0 auto 16px}
+.sh h3{margin:0 0 8px;font-size:18px}.sh p{margin:0 0 6px;font-size:14px;line-height:1.5;color:#5E6573}.sh .ss{color:#1E2028;font-weight:600;word-break:break-all}
+.sh .main{width:100%;margin:14px 0 0}.sh .lk{width:100%;margin:6px 0 0}.dng{background:#D13030}
+.ts{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);max-width:calc(100% - 36px);display:flex;padding:12px 18px;border-radius:22px;background:#161822;color:#F4F4F8;font-size:14px;white-space:nowrap}.ts i{font-style:normal;max-width:150px;overflow:hidden;text-overflow:ellipsis}
+.ft{display:block;width:100%;text-align:center;height:44px;border:0;background:none;color:#6B7180;font-size:13px}
 </style></head><body>
 <header><svg width="64" height="70" viewBox="0 0 80 88"><path d="M46 4c4 6-2 10 2 16" stroke="#E64646" stroke-width="4" fill="none" stroke-linecap="round"/><rect x="6" y="20" width="68" height="56" rx="14" fill="#ECEEF2"/><rect x="6" y="56" width="68" height="20" rx="10" fill="#C4C8D0"/><rect x="6" y="54" width="68" height="3" fill="#00AE42"/><rect x="16" y="30" width="48" height="24" rx="8" fill="#22242C"/><rect x="25" y="35" width="8" height="13" rx="3" fill="#00AE42"/><rect x="47" y="35" width="8" height="13" rx="3" fill="#00AE42"/><path d="M31 76h18l-5 10h-8z" fill="#C8963C"/></svg>
-<div><h1>你好呀！</h1><p>三步把我连上你的打印机</p></div></header>
+<div><h1>你好呀！</h1><p id="hp"></p></div></header>
 <div class="sec">只在工牌里保存登录凭证，不存密码，不经第三方服务器</div>
 <div id="app">
-<a class="tow" id="towm" href="/?mode=wifi">只管理 Wi-Fi（不用重新登录拓竹账号）→</a>
+<div id="v-home" style="display:none">
+<button class="card ent" id="hm"><span class="ic"><svg viewBox="0 0 24 24"><path d="M2 9a15 15 0 0 1 20 0M5.5 12.5a10 10 0 0 1 13 0M9 16a5 5 0 0 1 6 0M12 19.5v.1"/></svg></span><div>管理 Wi-Fi<small>只管网络，不用重新登录拓竹</small></div><u>›</u></button>
+<button class="card ent" id="hr"><span class="ic"><svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/></svg></span><div>重新登录拓竹账号<small>登录过期或换了账号时用</small></div><u>›</u></button>
+<button class="ft" id="hf">换打印机？重新走一遍完整设置 ›</button></div>
+<div id="v-first" style="display:none">
 <div class="card wifi"><div class="t"><span class="n">1</span>连接 Wi-Fi</div>
 <label>选择网络（仅支持 2.4G）</label><select id="ssid"><option>正在搜索…</option></select>
 <label>密码</label><input id="pw" type="password" autocomplete="off"></div>
-<div class="card"><div class="t"><span class="n">2</span>登录拓竹账号</div>
+<div class="card"><div class="t"><span class="n" id="n2">2</span>登录拓竹账号</div>
 <label>邮箱或手机号</label><input id="acct" autocomplete="username">
 <label>验证码</label><div class="row"><input id="code" inputmode="numeric" maxlength="6" placeholder="6 位数字"><button class="ghost" id="getc">获取验证码</button></div></div>
 <div class="card wifi"><div class="t"><span class="n">3</span>选择打印机</div><select id="dev" disabled><option>登录后显示</option></select></div>
-<div class="card wm" id="wm" style="display:none"><div class="t">已保存的 Wi-Fi<span id="wcnt" style="margin-left:auto;font-size:13px;color:#828896"></span></div>
-<div id="wlist"></div>
-<label>添加或更新一个（仅支持 2.4G；不支持隐藏的 Wi-Fi）</label><select id="wssid"><option>正在搜索…</option></select>
-<label>密码（开放网络留空）</label><input id="wpw" type="password" autocomplete="off">
-<button class="ghost" id="wadd" style="width:100%;margin-top:14px">保存这个 Wi-Fi</button>
-<div class="hint">最多 5 个，密码不会显示出来。工牌开机后会扫描周围的网络，从已保存的里挑信号最强的连；连不上再换下一个。</div>
-<button class="main" id="wdone" style="width:100%;margin:14px 0 0">完成并重启工牌</button></div>
 <div class="err" id="err"></div>
 <button class="main" id="go" disabled>完成绑定</button>
 <!-- 高级 · 方案 B:账号登录被滑块/二次验证拦住时用。需在拓竹 App 里把打印机切到局域网模式。用第 1 步的 Wi-Fi，跳过第 2、3 步 -->
@@ -44,33 +66,83 @@ details.card summary{font-size:15px;color:#828896;cursor:pointer}details.card .m
 <label>访问码（同一页面的 8 位码）</label><input id="lcode" autocomplete="off">
 <label>序列号 SN（设置 → 设备）</label><input id="lsn" autocomplete="off" autocapitalize="characters">
 <button class="main" id="golan">用局域网绑定</button></details></div>
+<div id="v-list" style="display:none">
+<div class="bn" id="lbn"><span>之前保存的 Wi-Fi 已自动加入</span><button aria-label="关闭" id="lbx">✕</button></div>
+<div id="ler"></div>
+<div class="card"><div class="t" id="lt" style="margin:0"></div><div class="hn">开机会自动连信号最强的那个</div><div id="lrows"></div></div>
+<div style="margin:0 18px"><button class="ghost add" id="ladd">＋ 添加 Wi-Fi</button><div class="cap" id="lcap"></div></div>
+<button class="main" id="ldone">完成</button></div>
+<div id="v-add" style="display:none"><button class="bk" id="abk">‹ 返回</button>
+<div class="card"><div class="t"><span class="n">＋</span>添加 Wi-Fi</div>
+<label>选择网络（仅支持 2.4G）</label><div class="row"><select id="wssid" disabled><option>正在搜索…</option></select><button class="ghost" id="arescan">重新搜索</button></div>
+<div class="hn" style="margin-bottom:0">暂不支持隐藏网络，也不支持需要网页登录的 Wi-Fi（酒店、商场等）</div>
+<label>密码</label><div class="pw"><input id="wpw" type="password" autocomplete="off"><button id="wshow">显示</button></div><div class="hn" style="margin-bottom:0">没有密码的开放网络，留空即可</div></div>
+<div id="aer"></div><button class="main" id="asave" disabled>保存并连接试试</button><button class="lk" id="acancel">取消</button></div>
+<div id="v-wait" class="done" style="display:none;padding-top:36px"><div class="sp"></div><h2 id="wh" style="margin:0 0 8px"></h2><p style="margin:0;color:#828896;font-size:13px">最多等 15 秒</p>
+<div class="tip"><p>手机可能会断开几秒，属于正常现象，稍等再回到这个页面。</p><p>成功与否以工牌屏幕为准：看到线线连上拓竹云，就是成功啦。</p></div>
+<button class="ghost add" id="wback" style="display:none;margin-top:16px">回到列表看看</button></div>
+<div class="done" id="v-wdone" style="display:none"><h2>好啦！</h2><p>Wi-Fi 设置已保存，工牌会自动连信号最强的那个。</p><p style="font-size:18px;color:#1E2028"><b>这个页面可以直接关掉啦</b></p></div>
+</div>
+<div class="ov" id="ov" style="display:none"></div>
 <script>
 // 接口约定（开发可改）：GET /api/scan -> [{ssid,rssi}]；POST /api/code {account,ssid,password}（首次配置需先连家里 Wi-Fi）；POST /api/login {account,code} -> {devices:[{id,name}]}；POST /api/bind {ssid,password,device_id}；POST /api/bind_lan {ssid,password,ip,code,sn}（高级 · 局域网）
-// 重新扫码：打开 /?mode=reauth，只显示登录卡片，bind 时只提交 account 相关 token，不传 ssid/device
-const RE=location.search.includes('mode=reauth'),WF=location.search.includes('mode=wifi');
+// v4.8 Wi-Fi 管理：GET /api/wifi_list -> {configured,max,migrated,items:[{ssid,connected[,rssi]}]}；POST /api/wifi_add {ssid,password}；POST /api/wifi_del {ssid}；POST /api/wifi_done {}
+// 页面分流：/?mode=reauth 只显示登录卡片；/?mode=wifi 直接进 Wi-Fi 列表；其余按 wifi_list.configured：true -> 入口页，false -> 首次 3 步。
+// 所有来自外部的字符串（SSID、打印机名、服务器错误文案）一律用 textContent 写入，不拼 HTML。
+let RE=location.search.includes('mode=reauth');const WF=location.search.includes('mode=wifi');
 const $=i=>document.getElementById(i),err=m=>$('err').textContent=m||'';
 const post=(u,b)=>fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.ok?r.json().catch(()=>({})):r.text().then(t=>{throw t||'出错了'}));
-if(RE||WF)$('towm').style.display='none';
-if(RE){document.querySelectorAll('.wm').forEach(e=>e.remove());document.querySelectorAll('.wifi').forEach(e=>e.remove());document.querySelector('header p').textContent='重新登录一下拓竹账号就好';document.querySelectorAll('.n')[0].textContent='✓'}
-if(!RE&&!WF)fetch('/api/scan').then(r=>r.json()).then(l=>{const s=$('ssid');s.textContent='';(l.length?l.map(n=>n.ssid):['没找到网络']).forEach(n=>{const o=document.createElement('option');o.textContent=n;s.append(o)})}).catch(()=>err('搜索 Wi-Fi 失败，刷新试试'));
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
+const show=(v,p)=>{['home','first','list','add','wait','wdone'].forEach(k=>$('v-'+k).style.display=k==v?'':'none');if(p!=null)$('hp').textContent=p;scrollTo(0,0)};
+const scan=()=>fetch('/api/scan').then(r=>r.json());
+function toFirst(re){RE=re;document.querySelectorAll('.wifi,#lanbox').forEach(e=>e.style.display=re?'none':'');$('n2').textContent=re?'✓':'2';show('first',re?'重新登录一下拓竹账号就好':'三步把我连上你的打印机');
+ if(!re&&!toFirst.s){toFirst.s=1;scan().then(l=>{const s=$('ssid');s.textContent='';(l.length?l.map(n=>n.ssid):['没找到网络']).forEach(n=>{const o=document.createElement('option');o.textContent=n;s.append(o)})}).catch(()=>err('搜索 Wi-Fi 失败，刷新试试'))}}
 $('getc').onclick=()=>{err();let a=$('acct').value.trim();if(!a)return err('先填邮箱或手机号');
  (RE?Promise.resolve():Promise.resolve(err('工牌正在连家里的 Wi-Fi，手机可能断开几秒，属于正常现象，稍等再回到这个页面'))).then(()=>post('/api/code',RE?{account:a}:{account:a,ssid:$('ssid').value,password:$('pw').value})).then(()=>{err();let s=60,b=$('getc');b.disabled=1;let t=setInterval(()=>{b.textContent=s--+'s';if(s<0){clearInterval(t);b.disabled=0;b.textContent='重新获取'}},1000)}).catch(err)};
 $('code').oninput=e=>{if(e.target.value.length==6)post('/api/login',{account:$('acct').value.trim(),code:e.target.value}).then(r=>{if(RE){$('go').disabled=0;err();return}let d=$('dev');d.disabled=0;d.textContent='';(r.devices||[]).forEach(x=>{const o=document.createElement('option');o.value=x.id;o.textContent=x.name;d.append(o)});$('go').disabled=0;err()}).catch(err)};
-const WAIT='<div class="done"><svg width="90" height="100" viewBox="0 0 80 88"><rect x="6" y="20" width="68" height="56" rx="14" fill="#ECEEF2"/><rect x="6" y="54" width="68" height="3" fill="#00AE42"/><rect x="16" y="30" width="48" height="24" rx="8" fill="#22242C"/><path d="M24 42q5-6 10 0M46 42q5-6 10 0" stroke="#00AE42" stroke-width="3" fill="none"/><path d="M31 76h18l-5 10h-8z" fill="#C8963C"/></svg><h2>快好啦！</h2><p>工牌正在连家里的 Wi-Fi，手机可能会断开几秒，属于正常现象。</p><p style="font-size:18px;color:#1E2028"><b>线线收到啦，正在连上拓竹云～</b></p><p style="color:#828896;font-size:13px">之后这个页面可以直接关掉，不用等它刷新。</p></div>';
+const WAIT='<div class="done"><svg width="90" height="100" viewBox="0 0 80 88"><rect x="6" y="20" width="68" height="56" rx="14" fill="#ECEEF2"/><rect x="6" y="54" width="68" height="3" fill="#00AE42"/><rect x="16" y="30" width="48" height="24" rx="8" fill="#22242C"/><path d="M24 42q5-6 10 0M46 42q5-6 10 0" stroke="#00AE42" stroke-width="3" fill="none"/><path d="M31 76h18l-5 10h-8z" fill="#C8963C"/></svg><h2>快好啦！</h2><p>工牌正在连家里的 Wi-Fi，手机可能会断开几秒，属于正常现象。</p><p style="font-size:18px;color:#1E2028"><b>线线收到啦，正在连上拓竹云～</b></p><p style="color:#828896;font-size:13px">之后这个页面可以直接关掉，不用等它刷新。</p><p style="color:#828896;font-size:13px">以后想加别的 Wi-Fi，再打开配网页，选「管理 Wi-Fi」。</p></div>';
 $('go').onclick=()=>{err();$('go').disabled=1;let b=RE?{reauth:true}:{ssid:$('ssid').value,password:$('pw').value,device_id:$('dev').value};
  // 先切到等待屏：成功与否以工牌屏幕为准，手机断开不算失败
  post('/api/bind',b).catch(()=>{});$('app').innerHTML=WAIT};
 $('golan').onclick=()=>{err();let b={ssid:$('ssid').value,password:$('pw').value,ip:$('lip').value.trim(),code:$('lcode').value.trim(),sn:$('lsn').value.trim().toUpperCase()};
  if(!b.ip||!b.code||!b.sn)return err('IP、访问码、序列号都要填');$('golan').disabled=1;
  post('/api/bind_lan',b).then(()=>{$('app').innerHTML=WAIT}).catch(e=>{$('golan').disabled=0;err(e)})};
-if(RE)$('lanbox').remove();
-// v4.8 只管 Wi-Fi：/?mode=wifi。列表/新增/删除都立刻写进工牌，点「完成」才重启。SSID 一律用 textContent 写入，不拼 HTML。
-if(WF){document.querySelectorAll('.card:not(.wm),#go').forEach(e=>e.style.display='none');$('wm').style.display='block';document.querySelector('header p').textContent='管理工牌里保存的 Wi-Fi';
- const wload=()=>fetch('/api/wifis').then(r=>r.json()).then(o=>{$('wcnt').textContent=o.wifis.length+'/'+o.max;const L=$('wlist');L.textContent='';
-  o.wifis.forEach(w=>{const r=document.createElement('div');r.className='wrow';const s=document.createElement('span');s.textContent=w.ssid;const b=document.createElement('button');b.className='ghost';b.textContent='删除';
-   b.onclick=()=>{err();post('/api/wifi_del',{ssid:w.ssid}).then(wload).catch(err)};r.append(s,b);L.append(r)})}).catch(()=>err('读取已保存的 Wi-Fi 失败，刷新试试'));
- wload();
- fetch('/api/scan').then(r=>r.json()).then(l=>{const s=$('wssid');s.textContent='';(l.length?l.map(n=>n.ssid):['没找到网络']).forEach(n=>{const o=document.createElement('option');o.textContent=n;s.append(o)})}).catch(()=>err('搜索 Wi-Fi 失败，刷新试试'));
- $('wadd').onclick=()=>{err();post('/api/wifi_add',{ssid:$('wssid').value,password:$('wpw').value}).then(()=>{$('wpw').value='';wload()}).catch(err)};
- $('wdone').onclick=()=>{$('wdone').disabled=1;post('/api/wifi_done',{}).catch(()=>{});$('app').innerHTML='<div class="done"><h2>已保存</h2><p>工牌正在重启，之后会自动连上保存的 Wi-Fi。</p><p style="color:#828896;font-size:13px">这个页面可以直接关掉。</p></div>'}}
+
+// ---- v4.8 Wi-Fi 管理 ----
+let L={items:[],max:5},MG=false;
+const loadList=()=>fetch('/api/wifi_list').then(r=>r.json());
+const sg=r=>r>-60?3:r>-75?2:1,lv=r=>r>-60?'信号强':r>-75?'信号中':'信号弱';
+const showEr=(id,t)=>{const c=$(id);c.textContent='';if(!t)return;const d=el('div','er');d.append(el('b',0,'!'),el('span',0,t));c.append(d)};
+function toast(a,s,z){const d=el('div','ts',a);d.append('「',el('i',0,s),'」'+(z||''));document.body.append(d);setTimeout(()=>d.remove(),2500)}
+function renderList(){const n=L.items.length,full=n>=L.max;$('lbn').style.display=MG?'':'none';$('lt').textContent='已保存的 Wi-Fi ('+n+'/'+L.max+')';
+ const R=$('lrows');R.textContent='';
+ L.items.forEach(x=>{const r=el('div','rw'),m=el('div','nm'),g=el('div','tg');m.append(el('b',0,x.ssid),g);
+  if(x.connected){g.append(el('span','tag on','当前连着'));if(x.rssi!=null){const s=el('i','sg l'+sg(x.rssi));s.append(el('i'),el('i'),el('i'));g.append(s)}}else g.append(el('span','tag','已保存'));
+  const d=el('button','dl','删除');d.disabled=n<2;d.onclick=()=>askDel(x);r.append(m,d);R.append(r)});
+ $('ladd').disabled=full;$('lcap').textContent=full?'最多保存 '+L.max+' 个，先删掉一个再添加':n<2?'至少留 1 个 Wi-Fi，工牌要靠它上网；想换网络，先添加新的再删旧的':''}
+const toList=()=>{showEr('ler');renderList();show('list','管理工牌的 Wi-Fi')};
+const setList=o=>{L=o;MG=MG&&!!o.migrated};
+function askDel(x){const o=$('ov'),c=x.connected,sh=el('div','sh'),b=el('button','main dng','删除'),k=el('button','lk','先不删');o.textContent='';
+ sh.append(el('h3',0,c?'删除当前连着的 Wi-Fi？':'删除这个 Wi-Fi？'),el('p','ss',x.ssid),el('p',0,c?'工牌现在就连着它。删除后会自动换到其他已保存的 Wi-Fi，这个页面可能断开几秒；附近没有其他已保存的网络时，工牌会暂时离线。':'删除后，工牌不会再自动连它。'),b,k);o.append(sh);o.style.display='flex';
+ const h=()=>o.style.display='none';o.onclick=e=>{if(e.target==o)h()};k.onclick=h;
+ b.onclick=()=>{h();showEr('ler');post('/api/wifi_del',{ssid:x.ssid}).then(loadList).then(o=>{setList(o);renderList();toast('已删除',x.ssid)}).catch(e=>showEr('ler',typeof e=='string'?e:'已提交；手机可能断开了几秒，重新连上工牌热点后刷新页面看结果'))}}
+function toAdd(){showEr('aer');$('wpw').value='';$('asave').disabled=true;show('add');const s=$('wssid');s.disabled=true;s.textContent='';s.append(el('option',0,'正在搜索…'));$('arescan').disabled=true;
+ scan().then(l=>{s.textContent='';if(!l.length){s.append(el('option',0,'没找到网络'));showEr('aer','没搜到 2.4G 网络。靠近路由器，再点「重新搜索」试试');return}
+  s.append(el('option',0,'请选择网络'));s.firstChild.value='';
+  l.forEach(n=>{const o=el('option',0,n.ssid+' · '+lv(n.rssi)+(L.items.some(x=>x.ssid==n.ssid)?' · 已保存':''));o.value=n.ssid;s.append(o)});s.disabled=false})
+ .catch(()=>{s.textContent='';s.append(el('option',0,'没找到网络'));showEr('aer','搜索 Wi-Fi 失败，刷新试试')}).then(()=>$('arescan').disabled=false)}
+$('wssid').onchange=()=>$('asave').disabled=!$('wssid').value;
+$('wshow').onclick=()=>{const p=$('wpw'),h=p.type=='password';p.type=h?'text':'password';$('wshow').textContent=h?'隐藏':'显示'};
+$('arescan').onclick=toAdd;$('abk').onclick=$('acancel').onclick=toList;
+$('asave').onclick=()=>{const s=$('wssid').value,p=$('wpw').value;if(!s)return;if(p&&p.length<8)return showEr('aer','密码至少 8 位；没有密码的网络请留空');
+ showEr('aer');const upd=L.items.some(x=>x.ssid==s);$('wh').textContent='正在连接「'+s+'」…';$('wback').style.display='none';show('wait');
+ const t=setTimeout(()=>$('wback').style.display='',16000);
+ // 工牌连新网络时热点信道可能跟着变，手机会断开、收不到响应：fetch 失败（非服务器文案）不算失败，留在等待页
+ post('/api/wifi_add',{ssid:s,password:p}).then(loadList).then(o=>{clearTimeout(t);setList(o);toList();upd?toast('已更新',s,'的密码'):toast('已保存',s)}).catch(e=>{if(typeof e!='string')return;clearTimeout(t);showEr('aer',e);show('add')})};
+$('wback').onclick=()=>loadList().then(o=>{setList(o);toList()}).catch(()=>$('wback').textContent='手机还没连上工牌热点，稍后再点一次');
+$('ladd').onclick=toAdd;$('lbx').onclick=()=>{MG=false;renderList()};
+$('ldone').onclick=()=>{post('/api/wifi_done',{}).catch(()=>{});show('wdone','管理工牌的 Wi-Fi')};
+$('hm').onclick=toList;$('hr').onclick=()=>toFirst(true);$('hf').onclick=()=>toFirst(false);
+if(RE)toFirst(true);
+else loadList().then(o=>{L=o;MG=!!o.migrated;if(WF)toList();else if(o.configured)show('home','线线已经设置好啦');else toFirst(false)}).catch(()=>{WF?toList():toFirst(false)});
 </script></body></html>

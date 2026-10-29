@@ -21,11 +21,15 @@
 static const char *TAG = "net";
 static EventGroupHandle_t s_eg;
 #define BIT_IP BIT0
+#define BIT_FAIL BIT1          // v4.8 net_try_connect:试连期间收到了(非自己触发的)断开事件
+_Static_assert(WIFI_REASON_ASSOC_LEAVE == WIFI_RSN_ASSOC_LEAVE && WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT == WIFI_RSN_4WAY_HS_TIMEOUT && WIFI_REASON_HANDSHAKE_TIMEOUT == WIFI_RSN_HANDSHAKE_TIMEOUT, "wifi_roam.h 里的原因码常量必须和 ESP-IDF 一致");
 static bool s_inited, s_ap_on, s_want_sta;
 static esp_timer_handle_t s_retry;
 static int s_backoff_ms = 1000;
 static net_ip_cb_t s_cb;
 static bool s_scanning;
+static volatile bool s_try_on;       // net_try_connect 进行中
+static volatile int s_try_reason;
 
 // ---- v4.8 多组 Wi-Fi 漫游(选网/超时/退避逻辑在 wifi_roam.c,主机测试;这里只把动作翻译成 esp_wifi_* 调用)----
 // 只在已存 >= 2 组时启用;只有 1 组时仍走下面 v4.7.x 的单组路径(net_sta_connect),行为不变。
@@ -122,6 +126,10 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
         bool had = xEventGroupGetBits(s_eg) & BIT_IP;
         xEventGroupClearBits(s_eg, BIT_IP);
         if (had && s_cb) s_cb(false);
+        if (s_try_on) {   // 配网页试连:自己调 esp_wifi_disconnect() 带 ASSOC_LEAVE,不算失败;其余原因码记下来
+            const wifi_event_sta_disconnected_t *td = data;
+            if (td && td->reason != WIFI_REASON_ASSOC_LEAVE) { s_try_reason = td->reason; xEventGroupSetBits(s_eg, BIT_FAIL); }
+        }
         if (s_roam_on) {
             // 我们自己调 esp_wifi_disconnect()(换下一组/开始扫描)会带 ASSOC_LEAVE,不是这一组失败,忽略
             // 在线(ONLINE)时我们从不主动断开,所以那时的 ASSOC_LEAVE 是路由器踢的,必须处理,否则会永远掉线。
@@ -239,7 +247,8 @@ void net_roam_stop(void) {
     xSemaphoreGive(s_roam_mu);
 }
 
-void net_roam_start(wifi_slots_t *owned) {
+// online=true:当前已经连着网,只换列表、不重扫(状态直接进 ONLINE,下次掉线才按 1 s 退避后重扫)。
+static void roam_begin(wifi_slots_t *owned, bool online) {
     if (!s_roam_mu) s_roam_mu = xSemaphoreCreateMutex();
     if (!s_roam_mu || !owned || owned->n < 1) { free(owned); return; }
     xSemaphoreTake(s_roam_mu, portMAX_DELAY);
@@ -249,7 +258,63 @@ void net_roam_start(wifi_slots_t *owned) {
     s_want_sta = true;
     roam_init(&s_roam);
     ROAM_HEAP("roam_start");
-    ESP_LOGI(TAG, "roam: start with %d saved networks", s_slots->n);
-    roam_feed(ROAM_EV_START);
+    ESP_LOGI(TAG, "roam: start with %d saved networks%s", s_slots->n, online ? " (already online)" : "");
+    if (online) s_roam.st = ROAM_ONLINE;
+    else roam_feed(ROAM_EV_START);
     xSemaphoreGive(s_roam_mu);
+}
+void net_roam_start(wifi_slots_t *owned) { roam_begin(owned, false); }
+
+bool net_sta_info(char *ssid_out, size_t len, int *rssi) {
+    if (!net_sta_has_ip() || !ssid_out || !len) return false;
+    wifi_ap_record_t ap;
+    if (esp_wifi_sta_get_ap_info(&ap) != ESP_OK) return false;
+    strlcpy(ssid_out, (const char *)ap.ssid, len);
+    if (rssi) *rssi = ap.rssi;
+    return true;
+}
+
+bool net_try_connect(const char *ssid, const char *pass, int timeout_ms, int *reason) {
+    net_roam_stop();
+    esp_timer_stop(s_retry);
+    s_want_sta = false;                      // 试连期间不要让 v4.7.x 的自动重连把 STA 拉回去
+    s_try_reason = 0;
+    s_try_on = true;
+    wifi_config_t w = { 0 };
+    strlcpy((char *)w.sta.ssid, ssid, sizeof w.sta.ssid);
+    strlcpy((char *)w.sta.password, pass ? pass : "", sizeof w.sta.password);
+    w.sta.threshold.authmode = (pass && pass[0]) ? WIFI_AUTH_WPA_PSK : WIFI_AUTH_OPEN;
+    bool was = net_sta_has_ip();
+    esp_wifi_disconnect();
+    for (int i = 0; was && i < 50 && net_sta_has_ip(); i++) vTaskDelay(pdMS_TO_TICKS(20));   // 等旧连接的断开事件把 BIT_IP 清掉,否则会把旧网络的 IP 当成新网络连上了
+    esp_wifi_set_config(WIFI_IF_STA, &w);
+    vTaskDelay(pdMS_TO_TICKS(150));          // 让旧连接/旧尝试遗留的断开事件先被事件循环处理掉,再清标志,免得把它误当成这次的失败
+    s_try_reason = 0;
+    xEventGroupClearBits(s_eg, BIT_FAIL);
+    ESP_LOGI(TAG, "try: connecting (timeout %d ms)", timeout_ms);   // 日志里不打 SSID/口令
+    bool ok = false;
+    if (esp_wifi_connect() == ESP_OK) {
+        EventBits_t b = xEventGroupWaitBits(s_eg, BIT_IP | BIT_FAIL, pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout_ms));
+        ok = b & BIT_IP;
+    } else s_try_reason = 0;
+    s_try_on = false;
+    if (reason) *reason = ok ? 0 : s_try_reason;
+    if (!ok) esp_wifi_disconnect();
+    ESP_LOGI(TAG, "try: %s reason=%d", ok ? "ok" : "failed", ok ? 0 : s_try_reason);
+    return ok;
+}
+
+void net_slots_apply(const wifi_slots_t *w, bool restart) {
+    if (!w || w->n < 1) return;
+    bool online = net_sta_has_ip();
+    if (w->n == 1) {                         // 单组:v4.7.x 原来的路径
+        net_roam_stop();
+        if (restart || !online) net_sta_connect(w->s[0].ssid, w->s[0].pass);
+        else { s_want_sta = true; s_backoff_ms = 1000; }   // 已经连着:不断线;STA 配置就是这一组(试连时写进去的)
+        return;
+    }
+    wifi_slots_t *c = malloc(sizeof *c);
+    if (!c) return;
+    *c = *w;
+    roam_begin(c, online && !restart);
 }
