@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 13 px
  * Bpp: 4
- * Opts: --font /tmp/NotoSansSC-Bold.otf -r 0x20-0x7E --symbols 中住分剩天录扫按新登码秒继续还重钟键 --size 13 --bpp 4 --format lvgl --no-compress --lv-font-name font_pet_13 -o /workspace/passport/fw/main/assets/font_pet_13.c
+ * Opts: --font /tmp/NotoSansSC-Bold.otf -r 0x20-0x7E --symbols 中住分剩天录扫按新登码秒继续还重钟键 --size 13 --bpp 4 --format lvgl --no-compress --lv-font-name font_pet_13 -o main/assets/font_pet_13.c
  ******************************************************************************/
 
 #include "lvgl.h"

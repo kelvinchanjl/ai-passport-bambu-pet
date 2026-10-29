@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 15 px
  * Bpp: 4
- * Opts: --font /tmp/NotoSansSC-Bold.otf -r 0x20-0x7E --symbols 上几出功厂哦复天定帮录恢成我扫新期登码绑置要设过连重？ --size 15 --bpp 4 --format lvgl --no-compress --lv-font-name font_pet_15 -o /workspace/passport/fw/main/assets/font_pet_15.c
+ * Opts: --font /tmp/NotoSansSC-Bold.otf -r 0x20-0x7E --symbols 上几出功厂哦复天定帮录恢成我扫新期登码绑置要设过连重？ --size 15 --bpp 4 --format lvgl --no-compress --lv-font-name font_pet_15 -o main/assets/font_pet_15.c
  ******************************************************************************/
 
 #include "lvgl.h"

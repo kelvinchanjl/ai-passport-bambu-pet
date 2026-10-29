@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 36 px
  * Bpp: 4
- * Opts: --font /tmp/NotoSansSC-Bold.otf -r 0x2D,0x30-0x3A --size 36 --bpp 4 --format lvgl --no-compress --lv-font-name font_pet_36 -o /workspace/passport/fw/main/assets/font_pet_36.c
+ * Opts: --font /tmp/NotoSansSC-Bold.otf -r 0x2D,0x30-0x3A --size 36 --bpp 4 --format lvgl --no-compress --lv-font-name font_pet_36 -o main/assets/font_pet_36.c
  ******************************************************************************/
 
 #include "lvgl.h"

@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 16 px
  * Bpp: 4
- * Opts: --font /tmp/NotoSansSC-Bold.otf -r 0x20-0x7E --symbols …上不中云到印啦已打扫拓据接数新未机码竹要读连重 --size 16 --bpp 4 --format lvgl --no-compress --lv-font-name font_pet_16 -o /workspace/passport/fw/main/assets/font_pet_16.c
+ * Opts: --font /tmp/NotoSansSC-Bold.otf -r 0x20-0x7E --symbols …上不中云到印啦已打扫拓据接数新未机码竹要读连重 --size 16 --bpp 4 --format lvgl --no-compress --lv-font-name font_pet_16 -o main/assets/font_pet_16.c
  ******************************************************************************/
 
 #include "lvgl.h"
