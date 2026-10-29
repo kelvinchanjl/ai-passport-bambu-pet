@@ -6,6 +6,12 @@
 //   POST /api/login {account,code}       -> {devices:[{id,name}]}
 //   POST /api/bind  {ssid,password,device_ids:[..≤4]} (旧版 device_id 仍接受) | {reauth:true}
 //   POST /api/bind_lan {ssid,password,ip,code,sn}   (方案 B,局域网)
+// v4.8「只管 Wi-Fi、不重登拓竹」(页面 /?mode=wifi;接口在任何配网模式下都可用):
+//   GET  /api/wifis                      -> {max,wifis:[{ssid}]}   已存 Wi-Fi 列表,**永远不回显密码**
+//   POST /api/wifi_add {ssid,password}   新增;同名 = 更新密码;满 5 组拒绝。保存即写 NVS(旧键 ssid/pass 镜像第 0 组)
+//   POST /api/wifi_del {ssid}            删除;只剩最后一组时拒绝
+//   POST /api/wifi_done {}               重启工牌,按新列表连网
+//   不支持隐藏 SSID(开机扫描匹配,扫不到的不会被尝试)。
 #include "lwip/inet.h"
 #include "setup_portal.h"
 #include "sdkconfig.h"
@@ -227,6 +233,49 @@ static esp_err_t h_bind(httpd_req_t *r) {
     return ok_json(r, "{}");
 }
 
+// ---- v4.8 Wi-Fi 列表管理 ----
+static esp_err_t wifi_fail(httpd_req_t *r, wifi_res_t e) {
+    switch (e) {
+    case WIFI_E_INVALID: return fail(r, "400 Bad Request", "Wi-Fi 名称 1–32 字节,密码最长 64 字节");
+    case WIFI_E_FULL: return fail(r, "400 Bad Request", "最多保存 5 个 Wi-Fi,请先删除一个");
+    case WIFI_E_NOTFOUND: return fail(r, "404 Not Found", "没有这个 Wi-Fi");
+    case WIFI_E_LAST: return fail(r, "400 Bad Request", "至少要留一个 Wi-Fi;要换网请先添加新的,再删旧的");
+    default: return fail(r, "500 Internal Server Error", "保存失败");
+    }
+}
+static esp_err_t h_wifis(httpd_req_t *r) {
+    wifi_slots_t *w = malloc(sizeof *w);
+    if (!w) return fail(r, "500 Internal Server Error", "内存不足");
+    app_config_wifi_load(w, s_cfg);   // NVS 异常时 w 里至少有旧键那一组
+    cJSON *o = cJSON_CreateObject(), *arr = cJSON_AddArrayToObject(o, "wifis");
+    cJSON_AddNumberToObject(o, "max", WIFI_SLOTS_MAX);
+    for (int i = 0; i < w->n; i++) { cJSON *e = cJSON_CreateObject(); cJSON_AddStringToObject(e, "ssid", w->s[i].ssid); cJSON_AddItemToArray(arr, e); }   // 只给 SSID
+    free(w);
+    char *s = cJSON_PrintUnformatted(o); cJSON_Delete(o);
+    if (!s) return fail(r, "500 Internal Server Error", "内存不足");
+    esp_err_t e = ok_json(r, s); free(s);
+    return e;
+}
+static esp_err_t h_wifi_edit(httpd_req_t *r, bool add) {
+    cJSON *j = read_json(r);
+    if (!j) return fail(r, "400 Bad Request", "请求格式不对");
+    wifi_slots_t *w = malloc(sizeof *w);
+    if (!w) { cJSON_Delete(j); return fail(r, "500 Internal Server Error", "内存不足"); }
+    app_config_wifi_load(w, s_cfg);
+    wifi_res_t res = add ? wifi_slots_add(w, jstr(j, "ssid"), jstr(j, "password")) : wifi_slots_delete(w, jstr(j, "ssid"));
+    esp_err_t e = res == WIFI_OK ? app_config_wifi_save(w) : ESP_OK;
+    cJSON_Delete(j); free(w);
+    if (res != WIFI_OK) return wifi_fail(r, res);
+    if (e != ESP_OK) return fail(r, "500 Internal Server Error", "保存失败");
+    return ok_json(r, "{}");
+}
+static esp_err_t h_wifi_add(httpd_req_t *r) { return h_wifi_edit(r, true); }
+static esp_err_t h_wifi_del(httpd_req_t *r) { return h_wifi_edit(r, false); }
+static esp_err_t h_wifi_done(httpd_req_t *r) {
+    xTaskCreate(reboot_task, "reboot", 2048, NULL, 2, NULL);
+    return ok_json(r, "{}");
+}
+
 // 方案 B:局域网绑定,不需要拓竹账号。{ssid,password,ip,code,sn} 存 NVS 后重启进 LAN 模式
 static bool all_alnum(const char *s, size_t lo, size_t hi) {
     size_t n = strlen(s); if (n < lo || n > hi) return false;
@@ -289,11 +338,12 @@ bool setup_portal_start(app_config_t *cfg, bool reauth) {
     s_cfg = cfg; s_reauth = reauth;
     if (net_init() != ESP_OK) return false;
     if (net_ap_start(s_ap, sizeof s_ap) != ESP_OK) return false;
-    if (reauth && cfg->ssid[0] && !net_sta_has_ip()) net_sta_connect(cfg->ssid, cfg->pass);
+    if (reauth && cfg->ssid[0] && !net_sta_has_ip() && !net_roam_active()) net_sta_connect(cfg->ssid, cfg->pass);   // v4.8:多组漫游中不强制连第 0 组
     httpd_handle_t h = NULL;
     httpd_config_t hc = HTTPD_DEFAULT_CONFIG();
     hc.stack_size = 8192;          // 处理函数里要跑 TLS 请求
     hc.max_open_sockets = 4;
+    hc.max_uri_handlers = 12;      // v4.8:默认 8 个放不下(原 6 个 + Wi-Fi 管理 4 个),多出来的会注册失败
     hc.lru_purge_enable = true;
     if (httpd_start(&h, &hc) != ESP_OK) return false;
     const httpd_uri_t uris[] = {
@@ -303,8 +353,13 @@ bool setup_portal_start(app_config_t *cfg, bool reauth) {
         { .uri = "/api/login", .method = HTTP_POST, .handler = h_login },
         { .uri = "/api/bind", .method = HTTP_POST, .handler = h_bind },
         { .uri = "/api/bind_lan", .method = HTTP_POST, .handler = h_bind_lan },
+        { .uri = "/api/wifis", .method = HTTP_GET, .handler = h_wifis },
+        { .uri = "/api/wifi_add", .method = HTTP_POST, .handler = h_wifi_add },
+        { .uri = "/api/wifi_del", .method = HTTP_POST, .handler = h_wifi_del },
+        { .uri = "/api/wifi_done", .method = HTTP_POST, .handler = h_wifi_done },
     };
-    for (size_t i = 0; i < sizeof uris / sizeof uris[0]; i++) httpd_register_uri_handler(h, &uris[i]);
+    for (size_t i = 0; i < sizeof uris / sizeof uris[0]; i++)
+        if (httpd_register_uri_handler(h, &uris[i]) != ESP_OK) ESP_LOGE(TAG, "register %s failed", uris[i].uri);
     httpd_register_err_handler(h, HTTPD_404_NOT_FOUND, h_redirect);
     xTaskCreate(dns_task, "dns", 3072, NULL, 4, NULL);
     s_state = PORTAL_WAITING;

@@ -1,6 +1,8 @@
 // main/net.c
 #include "net.h"
 #include "pet_logic.h"
+#include "sdkconfig.h"
+#include "wifi_roam.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_mac.h"
@@ -9,6 +11,8 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
+#include "freertos/semphr.h"
+#include "esp_system.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,19 +27,111 @@ static int s_backoff_ms = 1000;
 static net_ip_cb_t s_cb;
 static bool s_scanning;
 
+// ---- v4.8 多组 Wi-Fi 漫游(选网/超时/退避逻辑在 wifi_roam.c,主机测试;这里只把动作翻译成 esp_wifi_* 调用)----
+// 只在已存 >= 2 组时启用;只有 1 组时仍走下面 v4.7.x 的单组路径(net_sta_connect),行为不变。
+// 全部在 esp 事件循环线程/esp_timer 线程里非阻塞完成(扫描用 esp_wifi_scan_start(block=false)),没有新任务,没有新栈。
+static bool s_roam_on;
+static wifi_slots_t *s_slots;      // 堆上一份(<= 494 B),仅启用漫游时才分配
+static roam_t s_roam;
+static SemaphoreHandle_t s_roam_mu;
+#if CONFIG_PET_LOG_REPORT_KEYS     // 测试版:在关键点打堆信息,真机上核对多组 Wi-Fi 没有拉低 min_heap
+#define ROAM_HEAP(tag) ESP_LOGI(TAG, "heap@%s free=%u min=%u", tag, (unsigned)esp_get_free_heap_size(), (unsigned)esp_get_minimum_free_heap_size())
+#else
+#define ROAM_HEAP(tag) ((void)0)
+#endif
+
 void net_set_ip_callback(net_ip_cb_t cb) { s_cb = cb; }
 
-static void retry_cb(void *arg) { (void)arg; if (s_want_sta && !s_scanning) esp_wifi_connect(); }
+static void roam_exec(roam_act_t a);   // 调用方持有 s_roam_mu
+static void roam_feed(roam_ev_t e) {   // 调用方持有 s_roam_mu
+    s_roam.no_scan = s_ap_on;
+    roam_exec(roam_step(&s_roam, e, s_slots));
+}
+static void roam_exec(roam_act_t a) {
+    switch (a.kind) {
+    case ROAM_ACT_SCAN: {
+        esp_timer_stop(s_retry);
+        esp_wifi_disconnect();
+        wifi_scan_config_t sc = { .show_hidden = false };   // 隐藏 SSID 不支持
+        s_scanning = true;
+        ROAM_HEAP("scan_start");
+        if (esp_wifi_scan_start(&sc, false) != ESP_OK) { s_scanning = false; ESP_LOGW(TAG, "roam: scan_start failed"); roam_feed(ROAM_EV_SCAN_FAIL); }
+        break;
+    }
+    case ROAM_ACT_CONNECT: {
+        wifi_config_t w = { 0 };
+        const wifi_slot_t *sl = &s_slots->s[a.slot];
+        strlcpy((char *)w.sta.ssid, sl->ssid, sizeof w.sta.ssid);
+        strlcpy((char *)w.sta.password, sl->pass, sizeof w.sta.password);
+        w.sta.threshold.authmode = sl->pass[0] ? WIFI_AUTH_WPA_PSK : WIFI_AUTH_OPEN;
+        ESP_LOGI(TAG, "roam: try slot %d/%d (timeout %d ms)", a.slot, s_slots->n, a.ms);   // 日志里不打 SSID
+        esp_timer_stop(s_retry);
+        esp_wifi_disconnect();
+        esp_wifi_set_config(WIFI_IF_STA, &w);
+        esp_timer_start_once(s_retry, (uint64_t)a.ms * 1000);
+        if (esp_wifi_connect() != ESP_OK) { ESP_LOGW(TAG, "roam: connect call failed"); roam_feed(ROAM_EV_DISCONNECTED); }
+        break;
+    }
+    case ROAM_ACT_WAIT:
+        ESP_LOGI(TAG, "roam: wait %d ms then rescan", a.ms);
+        esp_timer_stop(s_retry);
+        esp_timer_start_once(s_retry, (uint64_t)a.ms * 1000);
+        break;
+    case ROAM_ACT_NONE: break;
+    }
+}
+static void roam_scan_done(void) {
+    wifi_plan_begin(&s_roam.plan);
+    wifi_ap_record_t rec;
+    int seen = 0;
+    while (esp_wifi_scan_get_ap_record(&rec) == ESP_OK) {   // 逐条取,栈上只有一条记录;取完驱动自己释放扫描列表
+        wifi_plan_feed(&s_roam.plan, s_slots, (const char *)rec.ssid, rec.rssi);
+        seen++;
+    }
+    wifi_plan_finish(&s_roam.plan);
+    ESP_LOGI(TAG, "roam: scan %d APs, %d saved networks in range", seen, (int)s_roam.plan.n);
+    ROAM_HEAP("scan_done");
+    roam_feed(ROAM_EV_SCAN_DONE);
+}
+
+static void retry_cb(void *arg) {
+    (void)arg;
+    if (s_roam_on) {
+        if (xSemaphoreTake(s_roam_mu, portMAX_DELAY) == pdTRUE) {
+            if (s_roam_on) roam_feed(ROAM_EV_TIMER);
+            xSemaphoreGive(s_roam_mu);
+        }
+        return;
+    }
+    if (s_want_sta && !s_scanning) esp_wifi_connect();
+}
 
 static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
     (void)arg; (void)data;
+    if (s_roam_on && base == WIFI_EVENT && id == WIFI_EVENT_SCAN_DONE) {
+        if (xSemaphoreTake(s_roam_mu, portMAX_DELAY) == pdTRUE) {
+            s_scanning = false;
+            if (s_roam_on && s_roam.st == ROAM_SCANNING) roam_scan_done();
+            xSemaphoreGive(s_roam_mu);
+        }
+        return;
+    }
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
-        if (s_want_sta) esp_wifi_connect();
+        if (s_want_sta && !s_roam_on) esp_wifi_connect();
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         bool had = xEventGroupGetBits(s_eg) & BIT_IP;
         xEventGroupClearBits(s_eg, BIT_IP);
         if (had && s_cb) s_cb(false);
-        if (s_want_sta) {
+        if (s_roam_on) {
+            // 我们自己调 esp_wifi_disconnect()(换下一组/开始扫描)会带 ASSOC_LEAVE,不是这一组失败,忽略
+            // 在线(ONLINE)时我们从不主动断开,所以那时的 ASSOC_LEAVE 是路由器踢的,必须处理,否则会永远掉线。
+            const wifi_event_sta_disconnected_t *d = data;
+            if (xSemaphoreTake(s_roam_mu, portMAX_DELAY) == pdTRUE) {
+                bool own = d && d->reason == WIFI_REASON_ASSOC_LEAVE && s_roam.st != ROAM_ONLINE;
+                if (s_roam_on && !own) { ESP_LOGI(TAG, "roam: disconnected reason=%d", d ? d->reason : -1); roam_feed(ROAM_EV_DISCONNECTED); }
+                xSemaphoreGive(s_roam_mu);
+            }
+        } else if (s_want_sta) {
             ESP_LOGI(TAG, "disconnected, retry in %d ms", s_backoff_ms);
             esp_timer_stop(s_retry);
             esp_timer_start_once(s_retry, (uint64_t)s_backoff_ms * 1000);
@@ -45,6 +141,10 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
         s_backoff_ms = 1000;
         xEventGroupSetBits(s_eg, BIT_IP);
         ESP_LOGI(TAG, "got ip");
+        if (s_roam_on && xSemaphoreTake(s_roam_mu, portMAX_DELAY) == pdTRUE) {
+            if (s_roam_on) { esp_timer_stop(s_retry); roam_feed(ROAM_EV_GOT_IP); ROAM_HEAP("got_ip"); }
+            xSemaphoreGive(s_roam_mu);
+        }
         if (s_cb) s_cb(true);
     }
 }
@@ -61,7 +161,7 @@ esp_err_t net_init(void) {
     e = esp_wifi_init(&wc);
     if (e != ESP_OK) return e;
     esp_wifi_set_storage(WIFI_STORAGE_RAM);   // 凭证只放我们自己的 petcfg
-    esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, on_event, NULL);
+    esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, on_event, NULL);   // 含 v4.8 的 SCAN_DONE
     esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, on_event, NULL);
     const esp_timer_create_args_t ta = { .callback = retry_cb, .name = "wifi_retry" };
     esp_timer_create(&ta, &s_retry);
@@ -75,6 +175,7 @@ esp_err_t net_init(void) {
 }
 
 void net_sta_connect(const char *ssid, const char *pass) {
+    net_roam_stop();   // 显式单组连接(配网页绑定/重登)接管,关掉漫游
     wifi_config_t w = { 0 };
     strlcpy((char *)w.sta.ssid, ssid, sizeof w.sta.ssid);
     strlcpy((char *)w.sta.password, pass ? pass : "", sizeof w.sta.password);
@@ -107,6 +208,7 @@ esp_err_t net_ap_start(char *name_out, size_t len) {
 }
 
 int net_scan(wifi_ap_record_t *out, int max) {
+    if (s_roam_on && s_roam.st == ROAM_SCANNING) return 0;   // v4.8:漫游的扫描正在进行,配网页稍后重试(避免两路同时取扫描结果)
     s_scanning = true;
     wifi_scan_config_t sc = { .show_hidden = false };
     esp_err_t e = esp_wifi_scan_start(&sc, true);
@@ -125,4 +227,29 @@ int net_scan(wifi_ap_record_t *out, int max) {
     }
     free(tmp);
     return k;
+}
+
+// ---- v4.8 多组 Wi-Fi 入口 ----
+bool net_roam_active(void) { return s_roam_on; }
+
+void net_roam_stop(void) {
+    if (!s_roam_mu) return;
+    if (xSemaphoreTake(s_roam_mu, portMAX_DELAY) != pdTRUE) return;
+    if (s_roam_on) { s_roam_on = false; esp_timer_stop(s_retry); s_scanning = false; }
+    xSemaphoreGive(s_roam_mu);
+}
+
+void net_roam_start(wifi_slots_t *owned) {
+    if (!s_roam_mu) s_roam_mu = xSemaphoreCreateMutex();
+    if (!s_roam_mu || !owned || owned->n < 1) { free(owned); return; }
+    xSemaphoreTake(s_roam_mu, portMAX_DELAY);
+    free(s_slots);
+    s_slots = owned;                         // 接管所有权;之后只读
+    s_roam_on = true;
+    s_want_sta = true;
+    roam_init(&s_roam);
+    ROAM_HEAP("roam_start");
+    ESP_LOGI(TAG, "roam: start with %d saved networks", s_slots->n);
+    roam_feed(ROAM_EV_START);
+    xSemaphoreGive(s_roam_mu);
 }

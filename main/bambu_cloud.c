@@ -349,6 +349,9 @@ bool bambu_cloud_start(app_config_t *cfg) {
     if (net_init() != ESP_OK) return false;
     xTaskCreate(token_task, "bambu_tok", 6144, NULL, BAMBU_TOK_PRIO, &s_tok_task);   // v4.4.1:高于 LVGL(4),界面忙也不会饿死云端
     net_set_ip_callback(on_ip);
-    net_sta_connect(cfg->ssid, cfg->pass);
+    // v4.8 多组 Wi-Fi:已存 >= 2 组 → 扫描匹配后按信号强弱逐个试;只有 1 组(含刚从 v4.7.x 升级上来的)→ 原来的单组连接,行为不变。
+    wifi_slots_t *ws = malloc(sizeof *ws);
+    if (ws && app_config_wifi_load(ws, cfg) == ESP_OK && ws->n >= 2) net_roam_start(ws);
+    else { free(ws); net_sta_connect(cfg->ssid, cfg->pass); }
     return true;
 }
