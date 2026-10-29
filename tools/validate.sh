@@ -38,6 +38,7 @@ run_host_tests() {
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_nvs_compat.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_no_flash_v452.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_reset_contract_v453.py
+    PYTHONDONTWRITEBYTECODE=1 python3 tests/test_portal_xss_v48.py
     if [[ -d managed_components/lvgl__lvgl ]]; then
         PYTHONDONTWRITEBYTECODE=1 "${QR_PYTHON:-python3}" tests/test_ap_name_v452.py
     else

@@ -368,6 +368,8 @@ def portal(src):
     if "post('/api/bind_lan'" not in html or html.count("'/api/bind_lan'") != 1:
         raise SystemExit("portal.html: expected exactly one POST /api/bind_lan (高级 · 用局域网连接)")
     html = portal_multi(html)
+    # v4.8 守卫:innerHTML 赋值里不许出现 ${...} 模板插值(SSID/打印机名会被当 HTML 执行)
+    if re.search(r"innerHTML\s*=[^;]*\$\{", html): raise SystemExit("portal.html: innerHTML 里拼了 ${...},外部字符串必须用 textContent")
     html = re.sub(r"<title>[^<]*</title>", "<title>线线配网</title>", html, count=1)   # v4.5:只改网页标题;热点名仍是 Passport-XXXX
     html = html.replace("看工牌上的小打印头蹦起来，就是成功了 🎉", "线线收到啦，正在连上拓竹云～")   # v4.4.3 配网成功文案(UI 定稿)
     data = gzip.compress(html.encode("utf-8"), 9, mtime=0)
@@ -386,13 +388,14 @@ def portal_multi(html):
              '.devs input{width:20px;height:20px;accent-color:#00AE42}.devs .on{width:8px;height:8px;border-radius:4px;background:#00AE42;margin-left:auto}'
              '.devs .off{width:8px;height:8px;border-radius:4px;background:#888;margin-left:auto}.devhint{font-size:12px;opacity:.6;margin-top:6px}</style>')
     html = html.replace("</head>", style + "</head>", 1)
-    old_fill = "let d=$('dev');d.disabled=0;d.innerHTML=(r.devices||[]).map(x=>`<option value=\"${x.id}\">${x.name}</option>`).join('');"
-    old_fill = old_fill.replace('\\"', '"')
+    old_fill = "let d=$('dev');d.disabled=0;d.textContent='';(r.devices||[]).forEach(x=>{const o=document.createElement('option');o.value=x.id;o.textContent=x.name;d.append(o)});"
     if old_fill not in html: raise SystemExit("portal.html: 打印机列表填充代码没找到")
-    new_fill = ("let d=$('devs'),L=r.devices||[];d.innerHTML=L.length?L.map((x,i)=>`<label><input type=checkbox value=\"${x.id}\" ${i<1?'checked':''}>"
-                "<span>${x.name}</span><i class=${x.online?'on':'off'}></i></label>`).join(''):'<div class=devhint>这个账号下没有打印机</div>';"
+    # v4.8:SSID/打印机名是外部字符串(邻居的 Wi-Fi 名、拓竹账号里的打印机名),一律 textContent 写入,不拼 HTML。
+    new_fill = ("let d=$('devs'),L=r.devices||[];d.textContent='';"
+                "if(!L.length){const h=document.createElement('div');h.className='devhint';h.textContent='这个账号下没有打印机';d.append(h)}"
+                "L.forEach((x,i)=>{const l=document.createElement('label'),c=document.createElement('input'),s=document.createElement('span'),p=document.createElement('i');"
+                "c.type='checkbox';c.value=x.id;c.checked=i<1;s.textContent=x.name;p.className=x.online?'on':'off';l.append(c,s,p);d.append(l)});"
                 "d.onchange=e=>{let c=[...d.querySelectorAll('input:checked')];if(c.length>4){e.target.checked=false;err('最多选 4 台')}};")
-    new_fill = new_fill.replace('\\"', '"')
     html = html.replace(old_fill, new_fill)
     old_b = "device_id:$('dev').value}"
     if old_b not in html: raise SystemExit("portal.html: /api/bind 的 device_id 没找到")
