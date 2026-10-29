@@ -174,5 +174,7 @@ for w in (390, 320):
                 pre=lst(five_items), size=(w, 500))
         assert r["iw"] == w and r["ih"] == 500 and r["y0"] > 0, ("页面应该先滚下去了", r)
         assert r["top"] >= 0 and r["bottom"] <= r["ih"] and r["y1"] == 0, ("提示条不在视口内", w, fail, r)
+        if fail == "network":   # D4:断网类失败的文案
+            assert r["txt"] == "没收到工牌的回复，可能已经删除。重新连上工牌热点后刷新页面，再点「管理 Wi-Fi」确认", r
 print("11 D2 删除失败提示条在视口内(390/320,http/断网两种)ok")
 print("test_portal_wifi_v48 OK")

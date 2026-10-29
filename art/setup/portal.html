@@ -126,7 +126,7 @@ const setList=o=>{L=o;MG=MG&&!!o.migrated};
 function askDel(x){const o=$('ov'),c=x.connected,sh=el('div','sh'),b=el('button','main dng','删除'),k=el('button','lk','先不删');o.textContent='';
  sh.append(el('h3',0,c?'删除当前连着的 Wi-Fi？':'删除这个 Wi-Fi？'),el('p','ss',x.ssid),el('p',0,c?'工牌现在就连着它。删除后会自动换到其他已保存的 Wi-Fi，这个页面可能断开几秒；附近没有其他已保存的网络时，工牌会暂时离线。':'删除后，工牌不会再自动连它。'),b,k);o.append(sh);o.style.display='flex';
  const h=()=>o.style.display='none';o.onclick=e=>{if(e.target==o)h()};k.onclick=h;
- b.onclick=()=>{h();showEr('ler');post('/api/wifi_del',{ssid:x.ssid}).then(loadList).then(o=>{setList(o);renderList();toast('已删除',x.ssid)}).catch(e=>showEr('ler',typeof e=='string'?e:'已提交；手机可能断开了几秒，重新连上工牌热点后刷新页面看结果'))}}
+ b.onclick=()=>{h();showEr('ler');post('/api/wifi_del',{ssid:x.ssid}).then(loadList).then(o=>{setList(o);renderList();toast('已删除',x.ssid)}).catch(e=>showEr('ler',typeof e=='string'?e:'没收到工牌的回复，可能已经删除。重新连上工牌热点后刷新页面，再点「管理 Wi-Fi」确认'))}}
 function toAdd(){showEr('aer');$('wpw').value='';$('asave').disabled=true;show('add');const s=$('wssid');s.disabled=true;s.textContent='';s.append(el('option',0,'正在搜索…'));$('arescan').disabled=true;
  scan().then(l=>{s.textContent='';if(!l.length){s.append(el('option',0,'没找到网络'));showEr('aer','没搜到 2.4G 网络。靠近路由器，再点「重新搜索」试试');return}
   s.append(el('option',0,'请选择网络'));s.firstChild.value='';
