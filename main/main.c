@@ -90,22 +90,24 @@ static pet_switch_t s_switch;
 static int s_set_sel;                // 设置页当前选中项
 static pet_ams_t s_ams_buf;          // v4.3 当前机器的 AMS(从存储拷出来再交给 UI)
 
-static const char *job_key(int i) { static const char *K[] = { "job", "job1", "job2", "job3" }; return K[i]; }
 static void job_load(void) {
     nvs_handle_t h;
     bool open = nvs_open("petjob", NVS_READONLY, &h) == ESP_OK;
     for (int i = 0; i < PET_MAX_PRINTERS; i++) {
         pet_job_init(&s_jobs[i]);
         size_t n = sizeof s_jobs[i];
-        if (open && (nvs_get_blob(h, job_key(i), &s_jobs[i], &n) != ESP_OK || n != sizeof s_jobs[i])) pet_job_init(&s_jobs[i]);
+        const char *key = pet_job_key(i);   // v4.8:越界返回 NULL(原 job_key 的 K[i] 在 i>=4 时越界读)
+        if (open && key && (nvs_get_blob(h, key, &s_jobs[i], &n) != ESP_OK || n != sizeof s_jobs[i])) pet_job_init(&s_jobs[i]);
         s_jobs[i].job[sizeof s_jobs[i].job - 1] = 0;
     }
     if (open) nvs_close(h);
 }
 static void job_save(int i) {
+    const char *key = pet_job_key(i);
+    if (!key) return;
     nvs_handle_t h;
     if (nvs_open("petjob", NVS_READWRITE, &h) != ESP_OK) return;
-    if (nvs_set_blob(h, job_key(i), &s_jobs[i], sizeof s_jobs[i]) == ESP_OK) nvs_commit(h);
+    if (nvs_set_blob(h, key, &s_jobs[i], sizeof s_jobs[i]) == ESP_OK) nvs_commit(h);
     nvs_close(h);
 }
 static pet_conn_t s_conn;             // v4.4.1 当前机器的「连接中/未连上」计时

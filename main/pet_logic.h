@@ -87,6 +87,8 @@ typedef struct {
 } pet_job_t;
 #define PET_TIME_VALID 1700000000LL   // 早于此的 now 视为时钟未同步
 void pet_job_init(pet_job_t *j);
+// 每台机器「开始时间」在 NVS("petjob")里的键名:0→"job",1→"job1",…。i 越界(<0 或 >=PET_MAX_PRINTERS)返回 NULL,调用方必须跳过。
+const char *pet_job_key(int i);
 // 每次拿到状态时调用。返回 true 表示记录变了(调用方写 NVS)。
 // 只有"亲眼看到开头"才记开始时间:新 job 首次出现时进度 <=1% 或处于 PREPARE;否则开始时间未知。
 bool pet_job_update(pet_job_t *j, const printer_status_t *s, int64_t now);

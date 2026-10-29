@@ -470,6 +470,11 @@ pet_ok_ev_t pet_okkey_tick(pet_okkey_t *k, uint32_t now) {
     if (k->pending && !k->second && !k->down && (uint32_t)(now - k->t_up) > PET_DBL_MS) { k->pending = false; return PET_OK_SINGLE; }
     return PET_OK_NONE;
 }
+// v4.8:从 main.c 的 job_key() 搬来。原来的 K[4] 在 i>=4 时越界读;现在越界返回 NULL,
+// 表长与 PET_MAX_PRINTERS 绑死:以后调大上限而忘了补键名,编译期就会报错。
+static const char *const JOB_KEYS[] = { "job", "job1", "job2", "job3" };
+_Static_assert(sizeof JOB_KEYS / sizeof JOB_KEYS[0] == PET_MAX_PRINTERS, "JOB_KEYS 必须和 PET_MAX_PRINTERS 同步");
+const char *pet_job_key(int i) { return (i >= 0 && i < PET_MAX_PRINTERS) ? JOB_KEYS[i] : NULL; }
 bool pet_dbl_enabled(bool demo, int n_printers) { return !demo && n_printers >= 2; }
 int pet_page_step(int page, int dir) { return ((page + (dir > 0 ? 1 : -1)) % PET_PAGES + PET_PAGES) % PET_PAGES; }
 const char *pet_hint_text(int page, bool demo, int n_printers, int step, char *buf, size_t len) {

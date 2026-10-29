@@ -28,6 +28,7 @@ run_host_tests() {
     "$CC" "${W[@]}" tests/test_keys_v44.c main/pet_logic.c -o "$t/keys" && "$t/keys"
     "$CC" "${W[@]}" tests/test_reset_v453.c main/pet_logic.c -o "$t/reset" && "$t/reset"
     "$CC" "${W[@]}" tests/test_key_guard.c -o "$t/key_guard" && "$t/key_guard"
+    "$CC" "${W[@]}" tests/test_job_key_v48.c main/pet_logic.c -o "$t/job_key" && "$t/job_key"
     "$CC" -std=c11 -Wall -Wextra -Werror -Icomponents/bsp/src tests/test_bsp_display_rounding.c components/bsp/src/bsp_display_rounding.c -o "$t/rounding" && "$t/rounding"
     "$CC" -std=c11 -Wall -Wextra -Werror -Icomponents/bsp/src tests/test_bsp_es8311_sleep_check.c components/bsp/src/bsp_es8311_sleep_check.c -o "$t/es8311" && "$t/es8311"
     "$CC" -std=c11 -Wall -Wextra -Werror -Itests/bsp_stubs -Icomponents/bsp/include tests/test_bsp_button.c -o "$t/button" && "$t/button"
