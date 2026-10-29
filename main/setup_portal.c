@@ -236,11 +236,11 @@ static esp_err_t h_bind(httpd_req_t *r) {
 }
 
 // ---- v4.8 Wi-Fi 列表管理(接口见文件头)----
-static const char MSG_FULL[] = "最多保存 5 个,先删掉一个再添加";
-static const char MSG_LAST[] = "至少留 1 个 Wi-Fi,工牌要靠它上网;想换网络,先添加新的再删旧的";
-static const char MSG_SHORT[] = "密码至少 8 位;没有密码的网络请留空";
-static const char MSG_BADPW[] = "密码不对,再核对一下(区分大小写)";
-static const char MSG_NOAP[] = "连不上这个 Wi-Fi,靠近路由器再试试(只支持 2.4G)";
+static const char MSG_FULL[] = "最多保存 5 个，先删掉一个再添加";
+static const char MSG_LAST[] = "至少留 1 个 Wi-Fi，工牌要靠它上网；想换网络，先添加新的再删旧的";
+static const char MSG_SHORT[] = "密码至少 8 位；没有密码的网络请留空";
+static const char MSG_BADPW[] = "密码不对，再核对一下（区分大小写）";
+static const char MSG_NOAP[] = "连不上这个 Wi-Fi，靠近路由器再试试（只支持 2.4G）";
 
 // GET /api/wifi_list:只读 NVS 和当前 STA 状态,不扫描(扫描会打断 STA 链路),永远不回密码。
 static esp_err_t h_wifi_list(httpd_req_t *r) {

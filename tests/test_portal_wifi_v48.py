@@ -105,7 +105,7 @@ assert r["after"] == "已保存的 Wi-Fi (1/5)" and r["toast"] == "已删除「"
 # 当前连着的那个:弹层换标题和说明
 r = run("q('#hm').click();await sleep(50);q('.dl').click();await sleep(20);return {h3:q('#ov h3').textContent,p:q('#ov p:not(.ss)').textContent,ss:q('#ov .ss').textContent}", pre=lst(HOME))
 assert r["h3"] == "删除当前连着的 Wi-Fi？" and "会自动换到其他已保存的 Wi-Fi" in r["p"] and r["ss"] == "Home-5G", r
-r = run("""q('#hm').click();await sleep(50);__M['/api/wifi_del']=()=>resp(false,'至少留 1 个 Wi-Fi,工牌要靠它上网',409);document.querySelectorAll('.dl')[0].click();q('#ov .dng').click();await sleep(100);
+r = run("""q('#hm').click();await sleep(50);__M['/api/wifi_del']=()=>resp(false,'至少留 1 个 Wi-Fi，工牌要靠它上网；想换网络，先添加新的再删旧的',409);document.querySelectorAll('.dl')[0].click();q('#ov .dng').click();await sleep(100);
  return {er:q('#ler').textContent}""", pre=lst(HOME))
 assert "至少留 1 个 Wi-Fi" in r["er"], r
 print("5 删除流程 ok")
@@ -117,14 +117,14 @@ r = run("""q('#hm').click();await sleep(50);q('#ladd').click();await sleep(100);
  const s=q('#wssid');s.value='Studio';s.onchange();a.save2=q('#asave').disabled;
  q('#wpw').value='123';q('#asave').click();await sleep(20);a.short=q('#aer').textContent;a.nopost=!__calls.some(c=>c[0]=='/api/wifi_add');a.still=vis('v-add');
  q('#wshow').click();a.type=q('#wpw').type;a.btn=txt('wshow');q('#wshow').click();a.type2=q('#wpw').type;
- __M['/api/wifi_add']=()=>resp(false,'密码不对,再核对一下(区分大小写)',502);
+ __M['/api/wifi_add']=()=>resp(false,'密码不对，再核对一下（区分大小写）',502);
  q('#wpw').value='12345678';q('#asave').click();await sleep(20);a.wait=vis('v-wait');a.wh=txt('wh');await sleep(100);a.back=vis('v-add');a.err=q('#aer').textContent;
  __M['/api/wifi_add']=()=>resp(true,{});__M['/api/wifi_list']=()=>resp(true,{configured:true,max:5,migrated:false,items:[{ssid:'Home-5G',connected:false},{ssid:'Studio',connected:true,rssi:-50}]});
  q('#asave').click();await sleep(100);a.list=vis('v-list');a.title=txt('lt');a.toast=q('.ts').textContent;a.body=__calls.filter(c=>c[0]=='/api/wifi_add').map(c=>c[1]);return a""", pre=lst(HOME) + SCAN)
 assert r["add"] and r["opts"] == ["请选择网络", "Studio · 信号强", "Home-5G · 信号中 · 已保存", PAY + " · 信号弱 · 已保存"] and r["vals"][2] == "Home-5G" and r["dis"] is False and r["save"] is True and r["save2"] is False, r
 assert r["short"] == "!密码至少 8 位；没有密码的网络请留空" and r["nopost"] and r["still"], r
 assert r["type"] == "text" and r["btn"] == "隐藏" and r["type2"] == "password", r
-assert r["wh"] == "正在连接「Studio」…" and r["back"] and r["err"] == "!密码不对,再核对一下(区分大小写)", r
+assert r["wh"] == "正在连接「Studio」…" and r["back"] and r["err"] == "!密码不对，再核对一下（区分大小写）", r
 assert r["list"] and r["title"] == "已保存的 Wi-Fi (2/5)" and r["toast"] == "已保存「Studio」" and len(r["body"]) == 2 and json.loads(r["body"][1]) == {"ssid": "Studio", "password": "12345678"}, r
 print("6 添加流程 ok")
 
@@ -170,11 +170,25 @@ for w in (390, 320):
         r = run("""q('#hm').click();await sleep(50);scrollTo(0,99999);await sleep(20);const y0=scrollY;
  __M['/api/wifi_del']=()=>%s;document.querySelectorAll('.dl')[4].click();q('#ov .dng').click();await sleep(100);
  const b=q('#ler .er').getBoundingClientRect();return {iw:innerWidth,ih:innerHeight,y0:y0,y1:scrollY,top:b.top,bottom:b.bottom,txt:q('#ler .er span').textContent}""" %
-                ("resp(false,'至少留 1 个 Wi-Fi',409)" if fail == "http" else "Promise.reject(new TypeError('Failed to fetch'))"),
+                ("resp(false,'至少留 1 个 Wi-Fi，工牌要靠它上网；想换网络，先添加新的再删旧的',409)" if fail == "http" else "Promise.reject(new TypeError('Failed to fetch'))"),
                 pre=lst(five_items), size=(w, 500))
         assert r["iw"] == w and r["ih"] == 500 and r["y0"] > 0, ("页面应该先滚下去了", r)
         assert r["top"] >= 0 and r["bottom"] <= r["ih"] and r["y1"] == 0, ("提示条不在视口内", w, fail, r)
         if fail == "network":   # D4:断网类失败的文案
             assert r["txt"] == "没收到工牌的回复，可能已经删除。重新连上工牌热点后刷新页面，再点「管理 Wi-Fi」确认", r
 print("11 D2 删除失败提示条在视口内(390/320,http/断网两种)ok")
+# 12) D3:setup_portal.c 里 5 条错误文案必须是全角标点(没有半角 , ; ( ))
+csrc = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "main", "setup_portal.c"), encoding="utf-8").read()
+msgs = dict(re.findall(r'static const char (MSG_\w+)\[\] = "(.*?)";', csrc))
+want = {
+    "MSG_FULL": "最多保存 5 个，先删掉一个再添加",
+    "MSG_LAST": "至少留 1 个 Wi-Fi，工牌要靠它上网；想换网络，先添加新的再删旧的",
+    "MSG_SHORT": "密码至少 8 位；没有密码的网络请留空",
+    "MSG_BADPW": "密码不对，再核对一下（区分大小写）",
+    "MSG_NOAP": "连不上这个 Wi-Fi，靠近路由器再试试（只支持 2.4G）",
+}
+for k, v in want.items():
+    assert msgs.get(k) == v, (k, msgs.get(k))
+    assert not re.search(r"[,;()]", msgs[k]), (k, msgs[k])
+print("12 D3 setup_portal.c 5 条错误文案全角标点 ok")
 print("test_portal_wifi_v48 OK")
