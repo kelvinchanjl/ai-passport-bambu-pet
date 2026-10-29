@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 从 build/ 生成 GitHub Release 附件:应用镜像、完整镜像、网页刷机 zip、SHA256SUMS。
-# 用法: tools/make_release.sh 4.7.2 [输出目录,默认 release/]
+# 用法: tools/make_release.sh 4.8.0 [输出目录,默认 release/]
 set -euo pipefail
 ver="${1:?版本号,例如 4.7.1}"
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$root"
