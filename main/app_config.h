@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "esp_err.h"
+#include "wifi_slots.h"
 #define CFG_MAX_PRINTERS 4
 typedef struct { char sn[32]; char name[48]; char product[24]; } cfg_printer_t;
 typedef struct {
@@ -27,3 +28,9 @@ esp_err_t app_config_save_token(const char *uid, const char *token, const char *
 esp_err_t app_config_erase(void);
 // v4.2:NVS "sns"(逗号分隔序列号) / "dnames"(\n 分隔机器名) / "dprods"(\n 分隔型号)。旧配置只有 sn/dname 时自动当成 1 台。
 esp_err_t app_config_save_printers(const app_config_t *c);
+// v4.8 多组 Wi-Fi(最多 WIFI_SLOTS_MAX = 5 组,存 NVS petcfg/"wifis";格式和 NVS 占用见 wifi_slots.h)。
+// load:读列表并与旧键 ssid/pass(c->ssid/c->pass)对账——第一次启动把 v4.7.x 的单组迁成第 0 组;有变化才写回。
+//       NVS 打不开时返回错误,但 s 里仍有旧键那一组(可用来连网)。
+// save:先镜像第 0 组到旧键 ssid/pass(降级回 v4.7.x 仍能连),再写 blob。列表为空时旧键写成空串。
+esp_err_t app_config_wifi_load(wifi_slots_t *s, const app_config_t *c);
+esp_err_t app_config_wifi_save(const wifi_slots_t *s);

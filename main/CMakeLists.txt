@@ -8,7 +8,7 @@ idf_component_register(
          "app_config.c"
          "bambu_cloud.c" "bambu_parse.c" "json_filter.c"
          "bambu_api.c"
-         "net.c"
+         "net.c" "wifi_slots.c" "wifi_roam.c"
          "setup_portal.c"
          "assets/pet_frames.S"
          "assets/heart.c"

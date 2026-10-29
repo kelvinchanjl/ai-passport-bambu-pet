@@ -4,6 +4,7 @@
 #include "nvs.h"
 #include "sdkconfig.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define NS "petcfg"
@@ -141,6 +142,57 @@ esp_err_t app_config_erase(void) {
     if (e != ESP_OK) return e;
     e = nvs_erase_all(h);
     if (e == ESP_OK) e = nvs_commit(h);
+    nvs_close(h);
+    return e;
+}
+
+// ---- v4.8 多组 Wi-Fi ----
+#define WIFI_KEY "wifis"
+
+// 先镜像旧键、后写 blob:中途断电时,旧键已经是新的第 0 组,下次开机对账只会把它提到最前,不会丢,也不会把已删的第 0 组"复活"到最前。
+static esp_err_t wifi_put(nvs_handle_t h, const wifi_slots_t *s, uint8_t *buf) {
+    size_t n = wifi_slots_pack(s, buf, WIFI_BLOB_MAX);
+    if (!n) return ESP_FAIL;
+    esp_err_t e = nvs_set_str(h, "ssid", s->n ? s->s[0].ssid : "");
+    if (e == ESP_OK) e = nvs_set_str(h, "pass", s->n ? s->s[0].pass : "");
+    if (e == ESP_OK) e = nvs_set_blob(h, WIFI_KEY, buf, n);
+    if (e == ESP_OK) e = nvs_commit(h);
+    return e;
+}
+
+esp_err_t app_config_wifi_load(wifi_slots_t *s, const app_config_t *c) {
+    wifi_slots_init(s);
+    nvs_handle_t h;
+    esp_err_t e = nvs_open(NS, NVS_READWRITE, &h);
+    if (e != ESP_OK) { wifi_slots_reconcile(s, c->ssid, c->pass); return e; }
+    uint8_t *buf = malloc(WIFI_BLOB_MAX);               // 堆上临时用,不占 app_task 的 5 KB 栈
+    if (!buf) { nvs_close(h); wifi_slots_reconcile(s, c->ssid, c->pass); return ESP_ERR_NO_MEM; }
+    size_t n = WIFI_BLOB_MAX;
+    esp_err_t ge = nvs_get_blob(h, WIFI_KEY, buf, &n);
+    bool had = ge == ESP_OK && wifi_slots_unpack(s, buf, n);
+    if (!had) {
+        wifi_slots_init(s);
+        if (ge != ESP_ERR_NVS_NOT_FOUND) ESP_LOGW("cfg", "wifis blob unusable (%s, len=%u),按旧键重建", esp_err_to_name(ge), (unsigned)n);
+    }
+    bool changed = wifi_slots_reconcile(s, c->ssid, c->pass);
+    e = ESP_OK;
+    if ((changed || !had) && s->n > 0) {
+        e = wifi_put(h, s, buf);
+        ESP_LOGI("cfg", "wifi slots=%d %s -> %s", s->n, had ? "reconciled" : "migrated from single ssid/pass", e == ESP_OK ? "saved" : esp_err_to_name(e));
+    } else ESP_LOGI("cfg", "wifi slots=%d", s->n);
+    free(buf);
+    nvs_close(h);
+    return e;
+}
+
+esp_err_t app_config_wifi_save(const wifi_slots_t *s) {
+    nvs_handle_t h;
+    esp_err_t e = nvs_open(NS, NVS_READWRITE, &h);
+    if (e != ESP_OK) return e;
+    uint8_t *buf = malloc(WIFI_BLOB_MAX);
+    if (!buf) { nvs_close(h); return ESP_ERR_NO_MEM; }
+    e = wifi_put(h, s, buf);
+    free(buf);
     nvs_close(h);
     return e;
 }

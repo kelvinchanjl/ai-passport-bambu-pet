@@ -63,7 +63,7 @@ def run(raw, mode, tmp):
     tc = os.path.join(tmp, "tbl_%s.c" % mode); open(tc, "w").write(c); exe = os.path.join(tmp, "t_" + mode)
     subprocess.check_call([os.environ.get("CC", "cc"), "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-Wno-missing-field-initializers",
                            "-I" + os.path.join(R, "tests", "nvs_stubs"), "-I" + os.path.join(R, "main"),
-                           os.path.join(R, "tests", "test_nvs_compat.c"), os.path.join(R, "main", "app_config.c"), tc, "-o", exe])
+                           os.path.join(R, "tests", "test_nvs_compat.c"), os.path.join(R, "main", "app_config.c"), os.path.join(R, "main", "wifi_slots.c"), tc, "-o", exe])
     subprocess.check_call([exe, "ok" if mode == "ok" else "erased"])
     return o
 

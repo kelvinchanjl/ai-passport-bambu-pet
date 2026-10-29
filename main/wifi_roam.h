@@ -1,0 +1,44 @@
+// main/wifi_roam.h — v4.8 多组 Wi-Fi 的选网与连接状态机。纯逻辑,不含 ESP-IDF 依赖,主机可测;
+// net.c 只负责把状态机给出的动作(扫描 / 连接某一组 / 等待)翻译成 esp_wifi_* 调用并把事件喂回来。
+//
+// 流程(只在已存 >= 2 组时启用;只有 1 组时 net.c 走 v4.7.x 原来的单组路径,行为完全不变):
+//   开机 / 断线退避到期 → 扫描 → 已存 SSID 与扫描结果匹配,按信号强到弱排序(同 SSID 多个 AP 取最强)→
+//   逐个连接,每个最多等 ROAM_CONNECT_TIMEOUT_MS;认证失败/断开立刻换下一个 → 全部失败 → 退避(1→2→4…→60 s,与 v4.7.x 相同)后重新扫描。
+//   不会自动进配网(v4.7.x 也不会)。
+// 隐藏 SSID 不支持:扫描里看不到的 SSID 不会被尝试。
+#pragma once
+#include "wifi_slots.h"
+
+// 每组等拿到 IP 的上限。15 s = 配网页等 IP 的现有值(setup_portal.c ensure_internet);5 组全部超时最坏 75 s(+扫描),之后进入退避。
+#define ROAM_CONNECT_TIMEOUT_MS 15000
+#define ROAM_BACKOFF_INIT_MS    1000
+#define ROAM_BACKOFF_MAX_MS     60000
+
+typedef struct {
+    bool    seen[WIFI_SLOTS_MAX];
+    int8_t  best[WIFI_SLOTS_MAX];    // 每组在扫描里看到的最强 RSSI
+    uint8_t order[WIFI_SLOTS_MAX];   // 尝试顺序(槽位号)
+    uint8_t n, pos;
+} wifi_plan_t;
+
+void wifi_plan_begin(wifi_plan_t *p);
+void wifi_plan_feed(wifi_plan_t *p, const wifi_slots_t *w, const char *ssid, int rssi);   // 每条扫描记录调一次
+void wifi_plan_finish(wifi_plan_t *p);   // 看到的按 RSSI 降序(同强度按槽位号);没看到的不进计划
+void wifi_plan_all(wifi_plan_t *p, const wifi_slots_t *w);   // 不扫描时:按保存顺序全部尝试
+int  wifi_plan_next(wifi_plan_t *p);     // 下一个槽位号;用完返回 -1
+
+typedef enum { ROAM_IDLE = 0, ROAM_SCANNING, ROAM_TRYING, ROAM_ONLINE, ROAM_BACKOFF } roam_state_t;
+typedef enum { ROAM_EV_START, ROAM_EV_SCAN_DONE, ROAM_EV_SCAN_FAIL, ROAM_EV_GOT_IP, ROAM_EV_DISCONNECTED, ROAM_EV_TIMER } roam_ev_t;
+typedef enum { ROAM_ACT_NONE = 0, ROAM_ACT_SCAN, ROAM_ACT_CONNECT, ROAM_ACT_WAIT } roam_act_kind_t;
+typedef struct { roam_act_kind_t kind; int slot; int ms; } roam_act_t;   // CONNECT:连 slot,ms 内没拿到 IP 就会收到 TIMER;WAIT:ms 后收到 TIMER
+
+typedef struct {
+    roam_state_t st;
+    wifi_plan_t plan;
+    int backoff_ms;
+    bool no_scan;      // 配网热点开着时不扫描(AP+STA 同时扫描会让手机掉线):按保存顺序直接试
+} roam_t;
+
+void roam_init(roam_t *r);
+// 喂事件,拿动作。SCAN_DONE 之前调用方必须已经对 r->plan 做完 begin/feed/finish。
+roam_act_t roam_step(roam_t *r, roam_ev_t ev, const wifi_slots_t *w);

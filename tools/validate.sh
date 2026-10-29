@@ -29,6 +29,9 @@ run_host_tests() {
     "$CC" "${W[@]}" tests/test_reset_v453.c main/pet_logic.c -o "$t/reset" && "$t/reset"
     "$CC" "${W[@]}" tests/test_key_guard.c -o "$t/key_guard" && "$t/key_guard"
     "$CC" "${W[@]}" tests/test_job_key_v48.c main/pet_logic.c -o "$t/job_key" && "$t/job_key"
+    "$CC" "${W[@]}" tests/test_wifi_slots_v48.c main/wifi_slots.c -o "$t/wifi_slots" && "$t/wifi_slots"
+    "$CC" "${W[@]}" tests/test_wifi_roam_v48.c main/wifi_roam.c main/wifi_slots.c -o "$t/wifi_roam" && "$t/wifi_roam"
+    "$CC" -std=gnu11 -D_GNU_SOURCE -Wall -Wextra -Werror -Itests/nvs_stubs -Imain tests/test_wifi_nvs_v48.c main/app_config.c main/wifi_slots.c -o "$t/wifi_nvs" && "$t/wifi_nvs"
     "$CC" -std=c11 -Wall -Wextra -Werror -Icomponents/bsp/src tests/test_bsp_display_rounding.c components/bsp/src/bsp_display_rounding.c -o "$t/rounding" && "$t/rounding"
     "$CC" -std=c11 -Wall -Wextra -Werror -Icomponents/bsp/src tests/test_bsp_es8311_sleep_check.c components/bsp/src/bsp_es8311_sleep_check.c -o "$t/es8311" && "$t/es8311"
     "$CC" -std=c11 -Wall -Wextra -Werror -Itests/bsp_stubs -Icomponents/bsp/include tests/test_bsp_button.c -o "$t/button" && "$t/button"
@@ -36,6 +39,7 @@ run_host_tests() {
     "$CC" -std=c11 -Wall -Wextra -Werror -Itests/audio_stubs -Icomponents/bsp/include -Icomponents/bsp/src tests/test_bsp_audio_recovery.c components/bsp/src/bsp_es8311_sleep_check.c -o "$t/audio" && "$t/audio"
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_cpu_contract_v441.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_nvs_compat.py
+    PYTHONDONTWRITEBYTECODE=1 python3 tests/test_wifi_blob_nvs_v48.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_no_flash_v452.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_reset_contract_v453.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_portal_xss_v48.py
