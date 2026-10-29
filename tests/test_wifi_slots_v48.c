@@ -20,6 +20,12 @@ int main(void) {
     memset(s32, 'a', 32); s32[32] = 0; memset(s33, 'a', 33); s33[33] = 0;
     memset(p64, 'p', 64); p64[64] = 0; memset(p65, 'p', 65); p65[65] = 0;
     assert(wifi_slots_valid("x", "") && wifi_slots_valid("x", NULL) && wifi_slots_valid(s32, p64));
+    // 配网页口令格式:空 / 8–63 位 / 64 位十六进制;1–7 位、63<len<64 以外长度、64 位非十六进制都拒绝
+    { char h64[65], x64[65], p63[64], p64b[65]; memset(h64, 'a', 64); h64[64] = 0; memcpy(x64, h64, 65); x64[10] = 'g'; memset(p63, 'z', 63); p63[63] = 0; memset(p64b, 'F', 64); p64b[64] = 0; p64b[0] = '0';
+      assert(wifi_pass_ok("") && wifi_pass_ok(NULL) && wifi_pass_ok("12345678") && wifi_pass_ok(p63) && wifi_pass_ok(h64) && wifi_pass_ok(p64b));
+      assert(!wifi_pass_ok("1") && !wifi_pass_ok("1234567") && !wifi_pass_ok(x64));
+      char p65b[66]; memset(p65b, 'a', 65); p65b[65] = 0; assert(!wifi_pass_ok(p65b));
+      assert(wifi_pass_ok("12345678") && !wifi_pass_ok("       ") /* 7 个空格 */ && wifi_pass_ok("        ") /* 8 个空格:合法的 WPA 口令 */); }
     assert(!wifi_slots_valid("", "p") && !wifi_slots_valid(NULL, "p") && !wifi_slots_valid(s33, "p") && !wifi_slots_valid("x", p65));
 
     // ---- 增:到 5 组为止,第 6 个新 SSID 被拒 ----

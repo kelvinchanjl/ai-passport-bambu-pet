@@ -17,6 +17,18 @@ bool wifi_slots_valid(const char *ssid, const char *pass) {
     return a >= 1 && a <= WIFI_SSID_MAX && b <= WIFI_PASS_MAX;
 }
 
+bool wifi_pass_ok(const char *pass) {
+    size_t n = pass ? strlen(pass) : 0;
+    if (n == 0) return true;
+    if (n >= 8 && n <= 63) return true;
+    if (n != 64) return false;
+    for (size_t i = 0; i < n; i++) {
+        char c = pass[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) return false;
+    }
+    return true;
+}
+
 int wifi_slots_find(const wifi_slots_t *w, const char *ssid) {
     if (!ssid) return -1;
     for (int i = 0; i < w->n; i++) if (strcmp(w->s[i].ssid, ssid) == 0) return i;

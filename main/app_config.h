@@ -34,3 +34,8 @@ esp_err_t app_config_save_printers(const app_config_t *c);
 // save:先镜像第 0 组到旧键 ssid/pass(降级回 v4.7.x 仍能连),再写 blob。列表为空时旧键写成空串。
 esp_err_t app_config_wifi_load(wifi_slots_t *s, const app_config_t *c);
 esp_err_t app_config_wifi_save(const wifi_slots_t *s);
+// 升级迁移标记(NVS 整数键 "wmig",1 项):load 在「blob 不存在、从旧键迁移」时置 1;配网页 /api/wifi_list 的 migrated 就是它。
+// clear:用户在配网页成功增/删/点「完成」后清 0。bound:配网页首次绑定/局域网绑定后调用——立刻把新绑定的 Wi-Fi 写成第 0 组,并清标记(新用户不该看到"已自动加入"横幅)。
+bool app_config_wifi_migrated(void);
+esp_err_t app_config_wifi_clear_migrated(void);
+esp_err_t app_config_wifi_bound(const app_config_t *c);

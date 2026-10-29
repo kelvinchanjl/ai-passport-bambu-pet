@@ -79,3 +79,5 @@ roam_act_t roam_step(roam_t *r, roam_ev_t ev, const wifi_slots_t *w) {
     }
     return act(ROAM_ACT_NONE, -1, 0);
 }
+
+bool wifi_fail_is_password(int reason) { return reason == WIFI_RSN_4WAY_HS_TIMEOUT || reason == WIFI_RSN_HANDSHAKE_TIMEOUT; }

@@ -100,6 +100,12 @@ int main(void) {
     roam_init(&R);
     assert(ev(ROAM_EV_TIMER).kind == ROAM_ACT_NONE && ev(ROAM_EV_DISCONNECTED).kind == ROAM_ACT_NONE && ev(ROAM_EV_SCAN_DONE).kind == ROAM_ACT_NONE && R.st == ROAM_IDLE);
 
+    // ---- 试连失败原因码:密码不对 vs 连不上(依据 ESP-IDF wifi.rst 的 wrong-password 表)----
+    assert(wifi_fail_is_password(15) && wifi_fail_is_password(204));
+    assert(!wifi_fail_is_password(0) && !wifi_fail_is_password(WIFI_RSN_ASSOC_LEAVE) && !wifi_fail_is_password(201 /* NO_AP_FOUND */)
+        && !wifi_fail_is_password(200 /* BEACON_TIMEOUT */) && !wifi_fail_is_password(202 /* AUTH_FAIL */) && !wifi_fail_is_password(203 /* ASSOC_FAIL */)
+        && !wifi_fail_is_password(205) && !wifi_fail_is_password(2 /* AUTH_EXPIRE */) && !wifi_fail_is_password(-1));
+
     printf("test_wifi_roam_v48 OK\n");
     return 0;
 }

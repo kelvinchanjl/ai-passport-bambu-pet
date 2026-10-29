@@ -148,6 +148,7 @@ esp_err_t app_config_erase(void) {
 
 // ---- v4.8 多组 Wi-Fi ----
 #define WIFI_KEY "wifis"
+#define WIFI_MIG_KEY "wmig"   // 整数,1 项:1 = 刚从 v4.7.x 迁移上来,配网页还没"确认"过
 
 // 先镜像旧键、后写 blob:中途断电时,旧键已经是新的第 0 组,下次开机对账只会把它提到最前,不会丢,也不会把已删的第 0 组"复活"到最前。
 static esp_err_t wifi_put(nvs_handle_t h, const wifi_slots_t *s, uint8_t *buf) {
@@ -178,6 +179,8 @@ esp_err_t app_config_wifi_load(wifi_slots_t *s, const app_config_t *c) {
     e = ESP_OK;
     if ((changed || !had) && s->n > 0) {
         e = wifi_put(h, s, buf);
+        // 只有「blob 还不存在(ge == NOT_FOUND)」才算从 v4.7.x 迁移上来;blob 损坏重建不算,不弹横幅
+        if (e == ESP_OK && !had && ge == ESP_ERR_NVS_NOT_FOUND) { nvs_set_i32(h, WIFI_MIG_KEY, 1); nvs_commit(h); }
         ESP_LOGI("cfg", "wifi slots=%d %s -> %s", s->n, had ? "reconciled" : "migrated from single ssid/pass", e == ESP_OK ? "saved" : esp_err_to_name(e));
     } else ESP_LOGI("cfg", "wifi slots=%d", s->n);
     free(buf);
@@ -194,5 +197,34 @@ esp_err_t app_config_wifi_save(const wifi_slots_t *s) {
     e = wifi_put(h, s, buf);
     free(buf);
     nvs_close(h);
+    return e;
+}
+
+bool app_config_wifi_migrated(void) {
+    nvs_handle_t h;
+    if (nvs_open(NS, NVS_READONLY, &h) != ESP_OK) return false;
+    int32_t v = 0;
+    bool r = nvs_get_i32(h, WIFI_MIG_KEY, &v) == ESP_OK && v == 1;
+    nvs_close(h);
+    return r;
+}
+
+esp_err_t app_config_wifi_clear_migrated(void) {
+    if (!app_config_wifi_migrated()) return ESP_OK;   // 没置位就不写(省一次 flash 写)
+    nvs_handle_t h;
+    esp_err_t e = nvs_open(NS, NVS_READWRITE, &h);
+    if (e != ESP_OK) return e;
+    e = nvs_set_i32(h, WIFI_MIG_KEY, 0);
+    if (e == ESP_OK) e = nvs_commit(h);
+    nvs_close(h);
+    return e;
+}
+
+esp_err_t app_config_wifi_bound(const app_config_t *c) {
+    wifi_slots_t *w = malloc(sizeof *w);
+    if (!w) return ESP_ERR_NO_MEM;
+    esp_err_t e = app_config_wifi_load(w, c);   // 绑定刚写了旧键 ssid/pass:对账把它提到第 0 组并立刻写 blob
+    free(w);
+    app_config_wifi_clear_migrated();           // 新绑定不是"迁移",不显示横幅
     return e;
 }

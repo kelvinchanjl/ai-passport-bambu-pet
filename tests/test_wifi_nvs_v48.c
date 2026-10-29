@@ -66,11 +66,12 @@ int main(void) {
     assert(app_config_wifi_load(&W, &C) == ESP_OK);
     assert(W.n == 1 && !strcmp(W.s[0].ssid, "HomeNet") && !strcmp(W.s[0].pass, "secretpass1"));
     g_ns = "petcfg"; assert(get("wifis", 'b') && get("wifis", 'b')->blen == 100);
-    assert(WRITES == 1);                                                              // 只写了 blob 一次;旧键值相同 → 不重写
+    assert(WRITES == 1);                                                              // 只写了 blob 一次(+ 一个整数标记,不计入 WRITES);旧键值相同 → 不重写
     // app-only 升级:升级前所有旧键,升级后逐个一模一样
     for (int i = 0; i < nsnap; i++) { g_ns = "petcfg"; item_t *it = get(snap[i].key, snap[i].type); assert(it); if (it->type == 's') assert(!strcmp(it->s, snap[i].s)); else assert(it->i == snap[i].i); }
-    printf("迁移:petcfg 占用 %d → %d 项(+%d = 1 组 blob 6 项)\n", before, petcfg_entries(), petcfg_entries() - before);
-    assert(petcfg_entries() - before == 6);
+    printf("迁移:petcfg 占用 %d → %d 项(+%d = 1 组 blob 6 项 + wmig 标记 1 项)\n", before, petcfg_entries(), petcfg_entries() - before);
+    assert(petcfg_entries() - before == 7);
+    assert(app_config_wifi_migrated());                                               // 迁移置标记 → 配网页横幅
 
     // ===== B. 再开机:幂等,不写 =====
     WRITES = 0; boot(); assert(app_config_wifi_load(&W, &C) == ESP_OK && W.n == 1 && WRITES == 0);
@@ -80,7 +81,7 @@ int main(void) {
     assert(app_config_wifi_save(&W) == ESP_OK);
     assert(!strcmp(S("ssid"), "HomeNet") && !strcmp(S("pass"), "secretpass1"));      // 第 0 组没变 → 旧键没变
     wifi_slots_t R; boot(); assert(app_config_wifi_load(&R, &C) == ESP_OK && R.n == 3 && !strcmp(R.s[1].ssid, "Office") && !strcmp(R.s[2].ssid, "Cafe") && R.s[2].pass[0] == 0);
-    assert(petcfg_entries() - before == 12);                                          // 3 组 = 12 项
+    assert(petcfg_entries() - before == 13);                                          // 3 组 = 12 项 + wmig 1 项
 
     // ===== D. 删除第 0 组:旧键镜像跟着变成新的第 0 组 =====
     assert(wifi_slots_delete(&R, "HomeNet") == WIFI_OK && app_config_wifi_save(&R) == ESP_OK);
@@ -100,7 +101,7 @@ int main(void) {
     // ===== F. 满 5 组后新绑定的挤掉最久没用的 =====
     assert(wifi_slots_add(&W, "W4", "p4") == WIFI_OK && wifi_slots_add(&W, "W5", "p5") == WIFI_OK && app_config_wifi_save(&W) == ESP_OK && W.n == 5);
     assert(wifi_slots_add(&W, "W6", "p6") == WIFI_E_FULL);
-    assert(petcfg_entries() - before == 18);                                          // 5 组 = 18 项
+    assert(petcfg_entries() - before == 19);                                          // 5 组 = 18 项 + wmig 1 项
     put_s("ssid", "Brand"); put_s("pass", "bp");
     boot(); assert(app_config_wifi_load(&W, &C) == ESP_OK && W.n == 5 && !strcmp(W.s[0].ssid, "Brand") && wifi_slots_find(&W, "W5") == -1);
     printf("5 组:petcfg 占用 %d 项(相对 v4.7.2 的 %d 项 +%d)\n", petcfg_entries(), before, petcfg_entries() - before);
@@ -128,6 +129,34 @@ int main(void) {
     app_config_wifi_save(&W);
     printf("最坏情况(满 5 组、SSID/口令都最长、两个 token 各 1100 字符):petcfg %d 项;NVS 分区 756 项,可用 630 项\n", petcfg_entries());
     assert(petcfg_entries() < 630 / 2);
+
+    // ===== K. migrated 标记的生命周期 =====
+    v472_image(); boot();
+    assert(!app_config_wifi_migrated());                                              // 还没 load:没有标记
+    assert(app_config_wifi_load(&W, &C) == ESP_OK && app_config_wifi_migrated());     // 升级后首次开机:置位
+    boot(); assert(app_config_wifi_load(&W, &C) == ESP_OK && app_config_wifi_migrated());   // 再开机、没人确认:仍置位(横幅一直在,直到用户操作)
+    assert(app_config_wifi_clear_migrated() == ESP_OK && !app_config_wifi_migrated());      // 配网页成功增/删/完成 → 清零
+    boot(); assert(app_config_wifi_load(&W, &C) == ESP_OK && !app_config_wifi_migrated());  // 清零后不再复现
+    int e0 = petcfg_entries(); assert(app_config_wifi_clear_migrated() == ESP_OK && petcfg_entries() == e0);   // 重复清零无副作用
+    // 坏 blob 重建不算"迁移"
+    v472_image(); boot(); app_config_wifi_load(&W, &C); app_config_wifi_clear_migrated();
+    g_ns = "petcfg"; { item_t *b = get("wifis", 'b'); b->b[0] = 9; }
+    boot(); assert(app_config_wifi_load(&W, &C) == ESP_OK && W.n == 1 && !app_config_wifi_migrated());
+    // 恢复出厂:标记随命名空间一起清掉
+    v472_image(); boot(); app_config_wifi_load(&W, &C); assert(app_config_wifi_migrated());
+    assert(app_config_erase() == ESP_OK && !app_config_wifi_migrated());
+
+    // ===== L. 全新用户首次绑定(h_bind 写旧键后调 app_config_wifi_bound):不是迁移,不显示横幅 =====
+    reset(); boot(); assert(!app_config_cloud_ready(&C));
+    put_s("ssid", "Home-5G"); put_s("pass", "newuser-pass"); put_s("uid", "42"); put_s("token", "t"); put_s("sn", "SN1");
+    boot(); assert(app_config_wifi_bound(&C) == ESP_OK && !app_config_wifi_migrated());
+    g_ns = "petcfg"; assert(get("wifis", 'b') && get("wifis", 'b')->blen == 100);     // 绑定后 blob 立刻存在
+    boot(); assert(app_config_wifi_load(&W, &C) == ESP_OK && W.n == 1 && !app_config_wifi_migrated());   // 下次开机也不会当成迁移
+    // 已有列表的设备「换打印机,重新走完整设置」时在第 1 步选了列表里另一个 Wi-Fi:提到第 0 组,标记仍为 0
+    assert(wifi_slots_add(&W, "Office", "off-pass1") == WIFI_OK && app_config_wifi_save(&W) == ESP_OK);
+    put_s("ssid", "Office"); put_s("pass", "off-pass1");
+    boot(); assert(app_config_wifi_bound(&C) == ESP_OK && !app_config_wifi_migrated());
+    boot(); assert(app_config_wifi_load(&W, &C) == ESP_OK && W.n == 2 && !strcmp(W.s[0].ssid, "Office") && !strcmp(W.s[1].ssid, "Home-5G"));
 
     reset();
     printf("test_wifi_nvs_v48 OK\n");

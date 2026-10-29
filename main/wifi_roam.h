@@ -42,3 +42,13 @@ typedef struct {
 void roam_init(roam_t *r);
 // 喂事件,拿动作。SCAN_DONE 之前调用方必须已经对 r->plan 做完 begin/feed/finish。
 roam_act_t roam_step(roam_t *r, roam_ev_t ev, const wifi_slots_t *w);
+
+// ---- 配网页「添加 Wi-Fi」试连失败时,用 STA 断开原因码区分「密码不对」和「连不上」----
+// 依据 ESP-IDF 文档 docs/en/api-guides/wifi.rst「Wi-Fi Reason code related to wrong password」:
+//   WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT(15)、WIFI_REASON_HANDSHAKE_TIMEOUT(204)= 加密网络上口令不对。
+//   (文档里 NO_AP_FOUND(201) 也可能是口令问题——给开放网络填了口令或给加密网络没填——但它更常见的原因是没搜到/太远,所以归「连不上」。)
+// 数值写成常量而不 include esp_wifi_types.h,以便主机测试;net.c 里有 _Static_assert 保证和 ESP-IDF 一致。
+#define WIFI_RSN_ASSOC_LEAVE          8     // 我们自己调 esp_wifi_disconnect()
+#define WIFI_RSN_4WAY_HS_TIMEOUT      15
+#define WIFI_RSN_HANDSHAKE_TIMEOUT    204
+bool wifi_fail_is_password(int reason);

@@ -7,6 +7,8 @@
 //     - 配网页绑定(h_bind/h_bind_lan)照旧只写 ssid/pass,下次开机由对账并入列表,不需要改绑定代码。
 //   NVS 占用(32 B/项):blob = 1 个头 + ceil(字节数/32) 个数据项 + 1 个 index 项。
 //     1 组 = 100 B → 6 项;3 组 = 296 B → 12 项;5 组(上限)= 492 B → 18 项。完整数字见 wifi_nvs_blob_entries()。
+//   另有整数键 "wmig"(1 项):升级迁移后置 1,用户在配网页成功增/删/点完成后清 0,配网页据此显示一次性「之前保存的 Wi-Fi 已自动加入」横幅。
+//   所以 5 组满额 = blob 18 项 + wmig 1 项 = 19 项(旧键 ssid/pass 是 v4.7.x 就有的,不算新增)。
 //   写入新 blob 时旧 blob 在新 blob 提交前仍占着项,瞬时峰值约 2 倍(5 组 = 36 项),远小于 24 KB NVS 分区的 630 个可用项。
 #pragma once
 #include <stdbool.h>
@@ -28,6 +30,8 @@ typedef enum { WIFI_OK = 0, WIFI_E_INVALID, WIFI_E_FULL, WIFI_E_NOTFOUND, WIFI_E
 void wifi_slots_init(wifi_slots_t *w);
 // SSID 1..32 字节;口令 0..64 字节(0 = 开放网络)。NULL 口令按空处理。
 bool wifi_slots_valid(const char *ssid, const char *pass);
+// 配网页提交口令的格式校验(比 wifi_slots_valid 严):空串(开放网络)、8–63 个字符的 WPA 口令、或恰好 64 位十六进制 PSK。1–7 位一定连不上,提前拒绝。
+bool wifi_pass_ok(const char *pass);
 int  wifi_slots_find(const wifi_slots_t *w, const char *ssid);   // 找不到 -1
 // 新增;同名 SSID = 更新口令(位置不变)。满 5 组且是新 SSID → WIFI_E_FULL。
 wifi_res_t wifi_slots_add(wifi_slots_t *w, const char *ssid, const char *pass);
