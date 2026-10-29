@@ -26,19 +26,28 @@ addEventListener('load',()=>setTimeout(async()=>{let out;try{out=await (async()=
  const p=document.createElement('pre');p.id='__out';p.textContent=JSON.stringify(out);document.body.append(p)},50));
 </script>"""
 
-def run(body, query="", pre=""):
+def run(body, query="", pre="", size=(390, 844)):
     page = html.replace("<body>", "<body>" + HARNESS % body + (("<script>%s</script>" % pre) if pre else ""), 1)
     d = tempfile.mkdtemp(); f = os.path.join(d, "p.html"); open(f, "w", encoding="utf-8").write(page)
-    out = subprocess.run([chrome, "--headless=new", "--no-sandbox", "--disable-gpu", "--virtual-time-budget=40000", "--dump-dom", "file://" + f + query],
+    # 无头 Chrome 的窗口最窄 500 px,所以把页面放进指定宽高的 iframe:iframe 里的 innerWidth 就是 390 / 320,
+    # 外层页面等内层产出结果后把 #__out 抄出来(需要 --allow-file-access-from-files)。
+    w = os.path.join(d, "w.html")
+    open(w, "w", encoding="utf-8").write(
+        '<!doctype html><body style="margin:0"><iframe id=f src="file://%s%s" style="border:0;width:%dpx;height:%dpx"></iframe><script>'
+        'const t=setInterval(()=>{const o=document.getElementById("f").contentDocument.getElementById("__out");'
+        'if(o){clearInterval(t);const p=document.createElement("pre");p.id="__out";p.textContent=o.textContent;p.setAttribute("data-imgs",document.getElementById("f").contentDocument.querySelectorAll("img").length);document.body.append(p);'
+        'document.title=document.getElementById("f").contentDocument.title}},100)</script>' % (f, query, size[0], size[1]))
+    f = w
+    out = subprocess.run([chrome, "--headless=new", "--no-sandbox", "--allow-file-access-from-files", "--disable-gpu", "--virtual-time-budget=40000", "--window-size=%d,%d" % size, "--dump-dom", "file://" + f],
                          capture_output=True, text=True, timeout=120).stdout
-    m = re.search(r'<pre id="__out">(.*?)</pre>', out, re.S)
+    m = re.search(r'<pre id="__out"[^>]*>(.*?)</pre>', out, re.S)
     assert m, "页面没有产出结果:" + out[-500:]
     import html as H
     r = json.loads(H.unescape(m.group(1)))
     assert "error" not in r, r["error"]
-    title = re.search(r"<title>(.*?)</title>", out, re.S).group(1)
-    assert "PWNED" not in title, "onerror 被执行了"
-    assert "<img" not in out.split("</header>", 1)[1].split("<script", 1)[0], "出现了 img 元素"
+    tm = re.search(r"<title>(.*?)</title>", out, re.S)
+    assert "PWNED" not in (tm.group(1) if tm else ""), "onerror 被执行了"
+    assert 'data-imgs="0"' in out, "出现了 img 元素"
     return r
 
 def lst(items, **k):
@@ -143,4 +152,15 @@ r = run("""await sleep(100);q('#hr').click();const a={re:vis('v-first'),hp:txt('
 assert r["re"] and r["hp"] == "重新登录一下拓竹账号就好" and r["hp2"] == "三步把我连上你的打印机" and r["wifi"] == ["", ""], r
 assert "以后想加别的 Wi-Fi，再打开配网页，选「管理 Wi-Fi」。" in r["wait"] and "快好啦！" in r["wait"], r
 print("9 入口页链接 / 首次绑定后提示 ok")
+# 10) D1:等待页遇到 32 位无空格英文 SSID(和 10 个汉字、含 &<> 的名字)不能横向溢出,390 和 320 宽都测
+LONG = "abcdefghijklmnopqrstuvwxyz012345"   # 32 位、没有空格也没有连字符(浏览器没有断行机会)
+for w in (390, 320):
+    for name in (LONG, "Very-Long-Network-Name-012345678", "家里的网络家里的网络家里的网络家a", "A&B<C>" * 5 + "xx"):
+        r = run("""q('#hm').click();await sleep(50);q('#ladd').click();await sleep(100);const s=q('#wssid');s.value=%s;s.onchange();q('#wpw').value='12345678';
+ __M['/api/wifi_add']=()=>new Promise(()=>{});q('#asave').click();await sleep(100);
+ const h=q('#wh').getBoundingClientRect();return {iw:innerWidth,sw:document.documentElement.scrollWidth,bw:document.body.scrollWidth,wait:vis('v-wait'),hr:h.right,hl:h.left}""" % json.dumps(name),
+                pre=lst(HOME) + "__M['/api/scan']=()=>resp(true,[{ssid:%s,rssi:-50}]);" % json.dumps(name), size=(w, 844))
+        assert r["wait"] and r["iw"] == w, r
+        assert r["sw"] <= r["iw"] and r["bw"] <= r["iw"] and r["hr"] <= r["iw"] and r["hl"] >= 0, ("横向溢出", w, name, r)
+print("10 D1 等待页长 SSID 不溢出(390/320)ok")
 print("test_portal_wifi_v48 OK")
