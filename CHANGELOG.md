@@ -5,13 +5,14 @@
 ## v4.8.0 (2026-10-29)
 
 - 新增:**多个 Wi-Fi**,最多保存 5 个。开机/断线后扫描,在已保存的网络里按信号强弱逐个尝试(每个最多 15 秒,认证失败立即换下一个),全部失败后沿用原来的 1→60 秒退避重试;不会自动进配网页。只存了 1 个 Wi-Fi 时走原来的单组路径,行为不变。不支持隐藏的 Wi-Fi。
-- 新增:配网页 `/?mode=wifi`「只管理 Wi-Fi(不用重新登录拓竹账号)」:列出已保存的 Wi-Fi 名称(不回显密码)、添加/更新、删除(最后一个不可删)。配网页 HTTP 服务的 URI 处理函数上限从 8 提到 12。
-- 升级兼容:第一次开机把 v4.7.x 的单个 `ssid`/`pass` 迁成第 1 个;新的 Wi-Fi 列表存在 NVS `petcfg/wifis`(1 个占 6 项,5 个占 18 项,24 KB 的 NVS 共 756 项),并且始终把第 1 个镜像回旧键 `ssid`/`pass`,所以「只更新应用」(0x10000)保留配网、降级回 v4.7.x 也能连第 1 个。
+- 新增:配网页 Wi-Fi 管理。已配置的工牌打开配网页先看到入口页(管理 Wi-Fi / 重新登录拓竹账号 /「换打印机?重新走一遍完整设置」),「管理 Wi-Fi」里列出已保存的 Wi-Fi(不回显密码,当前连着的标出信号强弱)、添加、删除。添加时工牌先试连(最多 15 秒),连上才保存,密码不对和连不上分开提示;同名 = 更新密码;最后一个不可删;存满 5 个要先删再加。接口 `GET /api/wifi_list`(不扫描)、`POST /api/wifi_add|wifi_del|wifi_done`;`/?mode=wifi` 可直达列表。配网页 HTTP 服务的 URI 处理函数上限从 8 提到 12。首次绑定后的等待页提示「以后想加别的 Wi-Fi,选『管理 Wi-Fi』」;入口页图标用内联 SVG;密码框有显示/隐藏。
+- 修复(安全):配网页里扫描到的 SSID 和账号下的打印机名原来用 `innerHTML` 拼进页面,邻居的 Wi-Fi 名里带 `<img onerror=…>` 之类的标签就会在配网页里执行。现在一律用 `textContent`;`gen_assets.py` 加了构建期守卫,`innerHTML` 赋值里出现 `${…}` 直接报错。
+- 升级兼容:第一次开机把 v4.7.x 的单个 `ssid`/`pass` 迁成第 1 个;新的 Wi-Fi 列表存在 NVS `petcfg/wifis`(1 个占 6 项,5 个占 18 项,另有升级标记 `wmig` 1 项,最多共 19 项;24 KB 的 NVS 共 756 项),并且始终把第 1 个镜像回旧键 `ssid`/`pass`,所以「只更新应用」(0x10000)保留配网、降级回 v4.7.x 也能连第 1 个。
 - 修复:`main.c` 里 `job_key()` 用 `K[4]` 直接下标,台数超过 4 会越界读。键名表搬到 `pet_logic.c` 的 `pet_job_key()`,越界返回 NULL,表长与 `PET_MAX_PRINTERS` 编译期绑定。当前上限仍是 4 台,所以这版实际行为没变。
 - 文档:README/FAQ 补「离家也能看:连着 Wi-Fi 就行」;说明单击中键与「下」键效果相同;写明多 Wi-Fi 的用法、5 个上限、不支持隐藏 Wi-Fi。
 - 版本号 4.8.0(`PROJECT_VER`、webflash、文档同步)。
-- 测试:新增主机测试 `test_job_key_v48`、`test_wifi_slots_v48`、`test_wifi_roam_v48`、`test_wifi_nvs_v48`(内存假 NVS 跑真实 `app_config.c`)、`test_wifi_blob_nvs_v48.py`(用 ESP-IDF 的 NVS 生成器/解析器实测占项数)。
-- **真机未测**:这一版没有在真机上验证过多 Wi-Fi 的扫描/切换、配网页的 Wi-Fi 管理界面、省电以外的内存余量(最低剩余内存是否仍 ≥ 40 KB)。测试版(`sdkconfig.test`)会在漫游的关键点打印堆信息,真机跑一遍就能看到。
+- 测试:新增主机测试 `test_job_key_v48`、`test_wifi_slots_v48`、`test_wifi_roam_v48`、`test_wifi_nvs_v48`(内存假 NVS 跑真实 `app_config.c`)、`test_wifi_blob_nvs_v48.py`(用 ESP-IDF 的 NVS 生成器/解析器实测占项数)、`test_portal_xss_v48.py` 和 `test_portal_wifi_v48.py`(headless Chrome 注入假接口,测配网页的分流/列表/添加/删除和 XSS)。
+- **真机未测**:这一版没有在真机上验证过多 Wi-Fi 的扫描/切换、配网页的 Wi-Fi 管理界面(含手机上的真实显示、添加时 AP+STA 同时在线的稳定性、密码不对的原因码分类)、省电以外的内存余量(最低剩余内存是否仍 ≥ 40 KB)。测试版(`sdkconfig.test`)会在漫游的关键点打印堆信息,真机跑一遍就能看到。
 
 ## v4.7.2 (2026-10-23)
 
