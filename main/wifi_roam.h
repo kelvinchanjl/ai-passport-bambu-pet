@@ -52,3 +52,12 @@ roam_act_t roam_step(roam_t *r, roam_ev_t ev, const wifi_slots_t *w);
 #define WIFI_RSN_4WAY_HS_TIMEOUT      15
 #define WIFI_RSN_HANDSHAKE_TIMEOUT    204
 bool wifi_fail_is_password(int reason);
+
+// ---- v4.8 必修:漫游自己发起的扫描被丢弃时,驱动里的扫描列表要清掉 ----
+// 驱动里的 AP 列表只有 esp_wifi_scan_get_ap_record(s) 或 esp_wifi_clear_ap_list() 才释放。
+// net.c 在漫游的 esp_wifi_scan_start(block=false) 成功后置 pending;收到 SCAN_DONE 时按下表处理:
+//   pending=false            → IGNORE :不是我们的扫描(配网页 net_scan 的阻塞扫描),不碰,让配网页自己取
+//   pending 且漫游开着、仍在 SCANNING → CONSUME:照常 roam_scan_done() 逐条取
+//   pending 但漫游已停/状态已变      → CLEAR  :结果没人要,esp_wifi_clear_ap_list() 释放
+typedef enum { ROAM_SCAN_IGNORE = 0, ROAM_SCAN_CONSUME, ROAM_SCAN_CLEAR } roam_scan_disp_t;
+roam_scan_disp_t roam_scan_done_disposition(bool pending, bool roam_on, roam_state_t st);

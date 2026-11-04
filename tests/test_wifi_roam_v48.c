@@ -106,6 +106,22 @@ int main(void) {
         && !wifi_fail_is_password(200 /* BEACON_TIMEOUT */) && !wifi_fail_is_password(202 /* AUTH_FAIL */) && !wifi_fail_is_password(203 /* ASSOC_FAIL */)
         && !wifi_fail_is_password(205) && !wifi_fail_is_password(2 /* AUTH_EXPIRE */) && !wifi_fail_is_password(-1));
 
+    // ---- v4.8 必修:漫游扫描结果被丢弃时要清(roam_scan_done_disposition)----
+    assert(roam_scan_done_disposition(false, true, ROAM_SCANNING) == ROAM_SCAN_IGNORE);    // 配网页自己的阻塞扫描:不碰
+    assert(roam_scan_done_disposition(false, false, ROAM_IDLE) == ROAM_SCAN_IGNORE);
+    assert(roam_scan_done_disposition(true, true, ROAM_SCANNING) == ROAM_SCAN_CONSUME);    // 正常:漫游取结果
+    assert(roam_scan_done_disposition(true, false, ROAM_SCANNING) == ROAM_SCAN_CLEAR);     // 情况 1:扫描中 net_roam_stop()
+    // 情况 2:扫描中又 roam_begin()(配网页增删):状态被重置,新扫描 start 失败进 BACKOFF,旧 SCAN_DONE 到达
+    slots3(); roam_init(&R);
+    roam_act_t a1 = ev(ROAM_EV_START); IS(a1, ROAM_ACT_SCAN, -1, 0);
+    roam_init(&R);                                           // roam_begin 重置
+    a1 = ev(ROAM_EV_START); IS(a1, ROAM_ACT_SCAN, -1, 0);
+    a1 = ev(ROAM_EV_SCAN_FAIL); IS(a1, ROAM_ACT_WAIT, -1, 1000);   // 旧扫描还在跑,新的 start 失败
+    assert(R.st == ROAM_BACKOFF);
+    assert(roam_scan_done_disposition(true, true, R.st) == ROAM_SCAN_CLEAR);
+    for (int st = ROAM_IDLE; st <= ROAM_BACKOFF; st++)
+        if (st != ROAM_SCANNING) assert(roam_scan_done_disposition(true, true, (roam_state_t)st) == ROAM_SCAN_CLEAR);
+    printf("roam scan pending/clear: PASS\n");
     printf("test_wifi_roam_v48 OK\n");
     return 0;
 }

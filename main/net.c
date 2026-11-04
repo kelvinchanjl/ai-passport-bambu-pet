@@ -38,6 +38,7 @@ static bool s_roam_on;
 static wifi_slots_t *s_slots;      // 堆上一份(<= 494 B),仅启用漫游时才分配
 static roam_t s_roam;
 static SemaphoreHandle_t s_roam_mu;
+static bool s_roam_scan_pending;   // v4.8 必修:漫游自己的非阻塞扫描已开始、SCAN_DONE 还没处理(在 s_roam_mu 内读写)
 #if CONFIG_PET_LOG_REPORT_KEYS     // 测试版:在关键点打堆信息,真机上核对多组 Wi-Fi 没有拉低 min_heap
 #define ROAM_HEAP(tag) ESP_LOGI(TAG, "heap@%s free=%u min=%u", tag, (unsigned)esp_get_free_heap_size(), (unsigned)esp_get_minimum_free_heap_size())
 #else
@@ -60,6 +61,7 @@ static void roam_exec(roam_act_t a) {
         s_scanning = true;
         ROAM_HEAP("scan_start");
         if (esp_wifi_scan_start(&sc, false) != ESP_OK) { s_scanning = false; ESP_LOGW(TAG, "roam: scan_start failed"); roam_feed(ROAM_EV_SCAN_FAIL); }
+        else s_roam_scan_pending = true;   // 失败时不清:可能是上一轮我们自己的扫描还没结束,那次的 SCAN_DONE 仍要清
         break;
     }
     case ROAM_ACT_CONNECT: {
@@ -112,10 +114,14 @@ static void retry_cb(void *arg) {
 
 static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
     (void)arg; (void)data;
-    if (s_roam_on && base == WIFI_EVENT && id == WIFI_EVENT_SCAN_DONE) {
-        if (xSemaphoreTake(s_roam_mu, portMAX_DELAY) == pdTRUE) {
-            s_scanning = false;
-            if (s_roam_on && s_roam.st == ROAM_SCANNING) roam_scan_done();
+    // v4.8 必修:SCAN_DONE 不再只在 s_roam_on 时处理。漫游停了(配网页试连/绑定)或重启了(配网页增删)以后,
+    // 我们自己那次扫描的结果没人取,会一直留在驱动里。判定见 wifi_roam.h roam_scan_done_disposition。
+    if (base == WIFI_EVENT && id == WIFI_EVENT_SCAN_DONE) {
+        if (s_roam_mu && xSemaphoreTake(s_roam_mu, portMAX_DELAY) == pdTRUE) {
+            roam_scan_disp_t d = roam_scan_done_disposition(s_roam_scan_pending, s_roam_on, s_roam.st);
+            if (s_roam_scan_pending) { s_roam_scan_pending = false; s_scanning = false; }
+            if (d == ROAM_SCAN_CONSUME) roam_scan_done();
+            else if (d == ROAM_SCAN_CLEAR) { esp_wifi_clear_ap_list(); ESP_LOGI(TAG, "roam: stale scan result cleared"); ROAM_HEAP("scan_clear"); }
             xSemaphoreGive(s_roam_mu);
         }
         return;
@@ -216,7 +222,7 @@ esp_err_t net_ap_start(char *name_out, size_t len) {
 }
 
 int net_scan(wifi_ap_record_t *out, int max) {
-    if (s_roam_on && s_roam.st == ROAM_SCANNING) return 0;   // v4.8:漫游的扫描正在进行,配网页稍后重试(避免两路同时取扫描结果)
+    if ((s_roam_on && s_roam.st == ROAM_SCANNING) || s_roam_scan_pending) return 0;   // v4.8:漫游的扫描正在进行或它的 SCAN_DONE 还没处理,配网页稍后重试(避免两路同时取/清扫描结果)
     s_scanning = true;
     wifi_scan_config_t sc = { .show_hidden = false };
     esp_err_t e = esp_wifi_scan_start(&sc, true);
