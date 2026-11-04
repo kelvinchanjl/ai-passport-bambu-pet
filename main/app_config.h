@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include "esp_err.h"
 #include "wifi_slots.h"
+#include "sleep_cfg.h"
 #define CFG_MAX_PRINTERS 4
 typedef struct { char sn[32]; char name[48]; char product[24]; } cfg_printer_t;
 typedef struct {
@@ -14,12 +15,17 @@ typedef struct {
     int n_printers;                         // v4.2 多机:配网页勾选的打印机(最多 4 台);printers[0].sn == sn
     cfg_printer_t printers[CFG_MAX_PRINTERS];
     int32_t remind_day;  // 上次过期提醒的本地日序号   // token 过期时间(Unix 秒);0 = 未知
+    uint8_t sleep_min;   // v4.8 休眠:0=关 / 2 / 5 分钟(NVS petcfg/sleep_min,默认 2)
+    uint8_t sleep_face;  // v4.8 熄屏画面:0=全黑 1=时钟 2=线线(NVS petcfg/sleep_face,默认 0)
 } app_config_t;
 void app_config_load(app_config_t *c);
 bool app_config_wifi_ready(const app_config_t *c);
 bool app_config_cloud_ready(const app_config_t *c);   // Wi-Fi + uid + token + SN
 bool app_config_lan_ready(const app_config_t *c);     // Wi-Fi + lan_ip + lan_code + SN
 esp_err_t app_config_save_remind_day(int32_t day);
+// v4.8 休眠设置:写入前先校验(非法值按默认写),各占 1 个 NVS 条目
+esp_err_t app_config_save_sleep_min(uint8_t v);
+esp_err_t app_config_save_sleep_face(uint8_t v);
 // 首次绑定:写全部字段
 esp_err_t app_config_save_all(const app_config_t *c);
 // 重新登录/刷新:只更新 token 相关字段,Wi-Fi 和打印机不动

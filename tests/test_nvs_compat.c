@@ -24,6 +24,8 @@ esp_err_t nvs_get_i32(nvs_handle_t h, const char *k, int32_t *v) { (void)h; cons
 esp_err_t nvs_set_str(nvs_handle_t h, const char *k, const char *v) { (void)h; (void)k; (void)v; return ESP_OK; }
 esp_err_t nvs_set_i64(nvs_handle_t h, const char *k, int64_t v) { (void)h; (void)k; (void)v; return ESP_OK; }
 esp_err_t nvs_set_i32(nvs_handle_t h, const char *k, int32_t v) { (void)h; (void)k; (void)v; return ESP_OK; }
+esp_err_t nvs_get_u8(nvs_handle_t h, const char *k, uint8_t *v) { (void)h; (void)k; (void)v; return ESP_ERR_NVS_NOT_FOUND; }   // v4.8 sleep_min/sleep_face:v4.4.1 镜像里没有
+esp_err_t nvs_set_u8(nvs_handle_t h, const char *k, uint8_t v) { (void)h; (void)k; (void)v; return ESP_OK; }
 esp_err_t nvs_get_blob(nvs_handle_t h, const char *k, void *out, size_t *len) { (void)h; (void)k; (void)out; (void)len; return ESP_ERR_NVS_NOT_FOUND; }   // v4.8:app_config.c 的 wifis blob;v4.4.1 镜像里没有
 esp_err_t nvs_set_blob(nvs_handle_t h, const char *k, const void *v, size_t len) { (void)h; (void)k; (void)v; (void)len; return ESP_OK; }
 esp_err_t nvs_erase_all(nvs_handle_t h) { (void)h; return ESP_OK; }

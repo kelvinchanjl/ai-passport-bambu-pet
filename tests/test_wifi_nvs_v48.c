@@ -27,6 +27,8 @@ esp_err_t nvs_get_i64(nvs_handle_t h, const char *k, int64_t *v) { (void)h; item
 esp_err_t nvs_get_i32(nvs_handle_t h, const char *k, int32_t *v) { (void)h; item_t *it = get(k, 'i'); if (!it) return ESP_ERR_NVS_NOT_FOUND; *v = (int32_t)it->i; return ESP_OK; }
 esp_err_t nvs_set_i64(nvs_handle_t h, const char *k, int64_t v) { (void)h; slot(k, 'i')->i = v; return ESP_OK; }
 esp_err_t nvs_set_i32(nvs_handle_t h, const char *k, int32_t v) { (void)h; slot(k, 'i')->i = v; return ESP_OK; }
+esp_err_t nvs_get_u8(nvs_handle_t h, const char *k, uint8_t *v) { (void)h; item_t *it = get(k, 'i'); if (!it) return ESP_ERR_NVS_NOT_FOUND; *v = (uint8_t)it->i; return ESP_OK; }
+esp_err_t nvs_set_u8(nvs_handle_t h, const char *k, uint8_t v) { (void)h; slot(k, 'i')->i = v; return ESP_OK; }
 esp_err_t nvs_erase_all(nvs_handle_t h) { (void)h; int k = 0; for (int i = 0; i < N; i++) { if (!strcmp(T[i].ns, g_ns)) { free(T[i].s); free(T[i].b); } else T[k++] = T[i]; } N = k; return ESP_OK; }
 esp_err_t nvs_commit(nvs_handle_t h) { (void)h; return ESP_OK; }
 void nvs_close(nvs_handle_t h) { (void)h; }
@@ -157,6 +159,25 @@ int main(void) {
     put_s("ssid", "Office"); put_s("pass", "off-pass1");
     boot(); assert(app_config_wifi_bound(&C) == ESP_OK && !app_config_wifi_migrated());
     boot(); assert(app_config_wifi_load(&W, &C) == ESP_OK && W.n == 2 && !strcmp(W.s[0].ssid, "Office") && !strcmp(W.s[1].ssid, "Home-5G"));
+
+    // ---- v4.8 休眠设置:petcfg/sleep_min、petcfg/sleep_face(u8)load/save/默认/非法值 ----
+    reset(); boot(); assert(C.sleep_min == 2 && C.sleep_face == 0);                       // 全新/擦除:默认 2 分钟 + 全黑
+    v472_image(); boot(); assert(C.sleep_min == 2 && C.sleep_face == 0);                  // v4.7.2 升级上来没有这两个键:默认
+    int s0 = petcfg_entries();
+    assert(app_config_save_sleep_min(5) == ESP_OK && app_config_save_sleep_face(SLEEP_FACE_PET) == ESP_OK);
+    assert(petcfg_entries() - s0 == 2);                                                   // 各占 1 个 NVS 条目
+    boot(); assert(C.sleep_min == 5 && C.sleep_face == 2);
+    assert(app_config_save_sleep_min(0) == ESP_OK && app_config_save_sleep_face(SLEEP_FACE_CLOCK) == ESP_OK);
+    boot(); assert(C.sleep_min == 0 && C.sleep_face == 1);                                // 0 = 关,合法
+    put_i("sleep_min", 7); put_i("sleep_face", 9); boot(); assert(C.sleep_min == 2 && C.sleep_face == 0);   // 非法值按默认
+    put_i("sleep_min", 255); put_i("sleep_face", 3); boot(); assert(C.sleep_min == 2 && C.sleep_face == 0);
+    assert(app_config_save_sleep_min(3) == ESP_OK && app_config_save_sleep_face(200) == ESP_OK);   // 写入前也校验
+    g_ns = "petcfg"; assert(get("sleep_min", 'i')->i == 2 && get("sleep_face", 'i')->i == 0);
+    assert(app_config_erase() == ESP_OK); boot(); assert(C.sleep_min == 2 && C.sleep_face == 0);   // 恢复出厂回默认
+    // 设置页中键循环
+    assert(sleep_min_next(0) == 2 && sleep_min_next(2) == 5 && sleep_min_next(5) == 0 && sleep_min_next(9) == 5);
+    assert(sleep_face_next(0) == 1 && sleep_face_next(1) == 2 && sleep_face_next(2) == 0 && sleep_face_next(7) == 1);
+    printf("sleep_min/sleep_face load/save/default/invalid: PASS\n");
 
     reset();
     printf("test_wifi_nvs_v48 OK\n");

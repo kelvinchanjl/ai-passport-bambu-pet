@@ -57,11 +57,18 @@ void app_config_load(app_config_t *c) {
         snprintf(c->printers[0].name, sizeof c->printers[0].name, "%s", c->dev_name);
     }
     if (c->n_printers > 0) snprintf(c->sn, sizeof c->sn, "%s", c->printers[0].sn);
-    if (open) { nvs_get_i64(h, "texp", &c->token_exp); nvs_get_i32(h, "remday", &c->remind_day); nvs_close(h); }
+    c->sleep_min = SLEEP_MIN_DEFAULT; c->sleep_face = SLEEP_FACE_DEFAULT;
+    if (open) {
+        nvs_get_i64(h, "texp", &c->token_exp); nvs_get_i32(h, "remday", &c->remind_day);
+        uint8_t v;   // v4.8 休眠:读不到保持默认,读到非法值也按默认
+        if (nvs_get_u8(h, "sleep_min", &v) == ESP_OK) c->sleep_min = sleep_min_sanitize(v);
+        if (nvs_get_u8(h, "sleep_face", &v) == ESP_OK) c->sleep_face = sleep_face_sanitize(v);
+        nvs_close(h);
+    }
     ESP_LOGI("cfg", "ssid=%s uid=%s token=%s refresh=%s sn=%s host=%s", c->ssid[0] ? "set" : "-",
              c->uid[0] ? "set" : "-", c->token[0] ? "set" : "-", c->refresh[0] ? "set" : "-",
              c->sn[0] ? "set" : "-", c->host);
-    ESP_LOGI("cfg", "printers=%d", c->n_printers);
+    ESP_LOGI("cfg", "printers=%d sleep_min=%u sleep_face=%u", c->n_printers, (unsigned)c->sleep_min, (unsigned)c->sleep_face);
 }
 
 bool app_config_lan_ready(const app_config_t *c) { return c->ssid[0] && c->lan_ip[0] && c->lan_code[0] && c->sn[0]; }
@@ -75,6 +82,18 @@ esp_err_t app_config_save_remind_day(int32_t day) {
     nvs_close(h);
     return e;
 }
+
+static esp_err_t save_u8(const char *key, uint8_t v) {
+    nvs_handle_t h;
+    esp_err_t e = nvs_open(NS, NVS_READWRITE, &h);
+    if (e != ESP_OK) return e;
+    e = nvs_set_u8(h, key, v);
+    if (e == ESP_OK) e = nvs_commit(h);
+    nvs_close(h);
+    return e;
+}
+esp_err_t app_config_save_sleep_min(uint8_t v) { return save_u8("sleep_min", sleep_min_sanitize(v)); }
+esp_err_t app_config_save_sleep_face(uint8_t v) { return save_u8("sleep_face", sleep_face_sanitize(v)); }
 
 bool app_config_wifi_ready(const app_config_t *c) { return c->ssid[0] != 0; }
 bool app_config_cloud_ready(const app_config_t *c) {
