@@ -129,6 +129,10 @@ int main(void) {
     pet_wake_check(prev, now4, 4, &pi);
     pet_state_t now5[PET_MAX_PRINTERS] = { PET_DONE, PET_PAUSE, PET_EMPTY, PET_FAIL };
     assert(pet_wake_check(prev, now5, 4, &pi) == 1);                 // 完成
+    // MQTT 重连:报文无效那几轮记成「没见过」(main.c 传 PET_STATE_COUNT),重连后第一个状态不算变化
+    pet_state_t gone[PET_MAX_PRINTERS] = { PET_STATE_COUNT, PET_STATE_COUNT, PET_STATE_COUNT, PET_STATE_COUNT };
+    assert(pet_wake_check(prev, gone, 4, &pi) == 0);
+    assert(pet_wake_check(prev, now5, 4, &pi) == 0);
     pet_wake_reset(prev); assert(prev[0] == PET_STATE_COUNT && prev[3] == PET_STATE_COUNT);
     assert(pet_wake_check(prev, now5, 9, &pi) == 0);                 // n 越界按 PET_MAX_PRINTERS
     puts("auto-wake transitions (4 states, first-seen ignored, pause switches printer): PASS");

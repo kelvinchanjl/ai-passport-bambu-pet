@@ -8,6 +8,11 @@
 //   演示模式:单击 中 = 下一个状态(6 个,n/6),不自动轮换;上/下照样切三页,耗材页是示例机器的 9 个槽;不换机器。
 //   底部提示只在详情/耗材页、常亮;首页没有提示(布局同 v4.3);演示角标「n/6」只在首页。
 //   断料/失败/完成的机器:停 3 秒后自动跳过去(pet_switch_t 防抖);演示模式里不跳。
+// v4.8 休眠(熄屏):无操作 2/5 分钟(设置页可选 关/2/5,默认 2)熄屏;熄屏画面 A 全黑(默认)/ B 时钟 / C 线线。
+//   A:背光 0 → DISPOFF+SLPIN → 暂停 LVGL 刷屏;醒来 SLPOUT → 恢复刷屏 → 整屏刷新 → DISPON → 背光 80。
+//   B/C:不 SLPIN,背光 8%,独立熄屏页面每 60 s 刷新;醒来删页面、背光 80。Wi-Fi/MQTT 不受影响。
+//   熄屏时任意键按下只亮屏(key_wake_guard:整次按键连同之后 250 ms 全吞);打印「变成」完成/失败/暂停/断料时自动亮屏,
+//   暂停时切到那台。配网/二维码/热点/重新登录/恢复出厂确认/演示模式不熄屏。设置页开着时到点:先关设置页再熄屏。
 #include "app_config.h"
 #include "bsp_button.h"
 #include "bsp_display.h"
@@ -20,6 +25,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "key_guard.h"
+#include "sleep_logic.h"
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "pet_logic.h"
@@ -117,10 +123,31 @@ static volatile bool s_input_ready;
 static pet_reset_t s_rst;             // v4.5.3 恢复出厂防误触状态机
 static bool s_ok_held;                // 中键物理上是否按着(PRESS/RELEASE 跟踪)
 static bool s_portal_on;
+// ---- v4.8 休眠 ----
+static key_wake_guard_t s_wake_guard;   // 只在按键回调(esp_timer 任务)里读写
+static volatile bool s_asleep;          // main 任务写:先置位再关背光
+static volatile bool s_wake_req;        // 按键回调写:熄屏时按下 → 请 main 任务亮屏
+static pet_sleep_t s_slp;
+static uint8_t s_slp_face;              // 这次熄屏用的画面
+static ui_screen_t s_slp_screen;        // 熄屏时的页面;页面被别处换掉(到期提醒/重新登录)就亮屏
+static pet_state_t s_wake_prev[PET_MAX_PRINTERS];
+static bool s_valid_cache[PET_MAX_PRINTERS];   // 这台有没有有效报文(MQTT 重连时 bambu_cloud 会 reset_all → valid=false)
+static int s_pct_cache[PET_MAX_PRINTERS];   // 每台进度(B 画面用;主循环里顺手记下,不再多拷一份 printer_status_t)
+static int s_slp_key, s_slp_refresh_n, s_slp_shift_pos;
+static uint32_t s_slp_ms;
+static pet_sleep_info_t s_slp_info;     // 静态:不占 pet_app 栈
+static printer_info_t s_slp_pinfo;
 
 static void on_key(bsp_btn_t btn, bsp_btn_ev_t ev, void *user) {
     (void)user;
     if (key_guard_consume(&s_key_guard, ev == BSP_BTN_RELEASE, esp_timer_get_time())) return;
+    // v4.8:熄屏时按下即拦(在进队列之前),这次按键连同松开后 250 ms 的 CLICK/DOUBLE/LONG 全吞,只亮屏
+    bool wake = false;
+    kwg_ev_t ke = ev == BSP_BTN_PRESS ? KWG_EV_PRESS : ev == BSP_BTN_RELEASE ? KWG_EV_RELEASE : KWG_EV_OTHER;
+    if (key_wake_guard_consume(&s_wake_guard, (int)btn, ke, s_asleep, esp_timer_get_time(), &wake)) {
+        if (wake) s_wake_req = true;
+        return;
+    }
     if (!s_input_ready) return;
     key_ev_t k = { btn, ev };
     xQueueSend(s_keys, &k, 0);  // 非阻塞,满了就丢
@@ -173,7 +200,10 @@ static void set_demo(bool on) {
 
 static void settings(bool on) {
     if (on) s_set_sel = 0;
-    if (bsp_lvgl_lock(200)) { pet_ui_show_settings(on, s_set_sel, status_store_active() == SRC_DEMO); bsp_lvgl_unlock(); }
+    if (bsp_lvgl_lock(200)) { pet_ui_show_settings(on, s_set_sel, status_store_active() == SRC_DEMO, s_cfg.sleep_min, s_cfg.sleep_face); bsp_lvgl_unlock(); }
+}
+static void settings_redraw(void) {
+    if (bsp_lvgl_lock(200)) { pet_ui_show_settings(true, s_set_sel, status_store_active() == SRC_DEMO, s_cfg.sleep_min, s_cfg.sleep_face); bsp_lvgl_unlock(); }
 }
 
 static int cur_page(void) { return pet_ui_filament_open() ? 2 : pet_ui_detail_open() ? 1 : 0; }
@@ -207,12 +237,23 @@ static void ok_single(void) {
     if (pet_ui_settings_open()) {
         switch (s_set_sel) {
             case SET_DEMO: set_demo(!demo); break;
+            case SET_SLEEP:                   // v4.8:关 → 2 分钟 → 5 分钟 → 关,立即保存
+                s_cfg.sleep_min = sleep_min_next(s_cfg.sleep_min);
+                app_config_save_sleep_min(s_cfg.sleep_min);
+                ESP_LOGI(TAG, "sleep_min -> %u", (unsigned)s_cfg.sleep_min);
+                break;
+            case SET_FACE:                    // v4.8:全黑 → 时钟 → 线线 → 全黑,立即保存
+                s_cfg.sleep_face = sleep_face_next(s_cfg.sleep_face);
+                app_config_save_sleep_face(s_cfg.sleep_face);
+                ESP_LOGI(TAG, "sleep_face -> %u", (unsigned)s_cfg.sleep_face);
+                break;
+            case SET_BACK: settings(false); header_refresh(false, 0); return;
             case SET_REPAIR: settings(false); start_portal(false); return;
             case SET_RESET:                   // v4.5.3:单击 = 打开确认页(不计时);松开后再按住 5 秒才清除
                 settings(false); pet_reset_open(&s_rst, s_ok_held); ui_screen(UI_RESET, NULL); return;
             default: settings(false); header_refresh(false, 0); return;
         }
-        if (bsp_lvgl_lock(200)) { pet_ui_show_settings(true, s_set_sel, status_store_active() == SRC_DEMO); bsp_lvgl_unlock(); }
+        settings_redraw();
         return;
     }
     if (pet_ui_screen() == UI_REAUTH) { start_portal(true); return; }
@@ -250,9 +291,11 @@ static uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 static void reset_cancel(void) {
     pet_reset_close(&s_rst);
     ui_screen(s_portal_on ? UI_SETUP_QR : UI_PET, setup_portal_ap_name());
-    if (!s_portal_on) { settings(true); s_set_sel = SET_RESET; if (bsp_lvgl_lock(200)) { pet_ui_show_settings(true, s_set_sel, status_store_active() == SRC_DEMO); bsp_lvgl_unlock(); } }
+    if (!s_portal_on) { settings(true); s_set_sel = SET_RESET; settings_redraw(); }
 }
 static void handle_key(const key_ev_t *k) {
+    pet_sleep_activity(&s_slp, now_ms());   // v4.8:任何按键事件都让无操作计时清零
+    if (s_asleep) return;                   // 兜底:熄屏后才处理到的旧事件不执行(守卫已拦新按键)
     bool in_set = pet_ui_settings_open();
     if (k->btn == BSP_BTN_OK) {
         switch (k->ev) {
@@ -286,7 +329,7 @@ static void handle_key(const key_ev_t *k) {
     if (pet_ui_screen() == UI_EXPIRY) { ui_screen(UI_PET, NULL); return; }   // 任意键收起
     if (in_set) {
         s_set_sel = pet_set_step(s_set_sel, k->btn == BSP_BTN_UP ? -1 : 1, SET_COUNT);   // v4.5.3:到头停住,不回绕
-        if (bsp_lvgl_lock(200)) { pet_ui_show_settings(true, s_set_sel, status_store_active() == SRC_DEMO); bsp_lvgl_unlock(); }
+        settings_redraw();
         return;
     }
     if (pet_ui_screen() != UI_PET) return;
@@ -357,11 +400,128 @@ static void check_expiry(void) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// v4.8 休眠(熄屏)
+static void sleep_fill_info(const pet_state_t *states, int cnt, int cur) {
+    time_t t = time(NULL); struct tm tm; localtime_r(&t, &tm);
+    bool valid = t > 1700000000;   // 同 status_bar.c T_VALID:没对时显示 --:--
+    status_bar_fmt_time(&tm, valid, s_slp_info.time, sizeof s_slp_info.time);
+    s_slp_key = valid ? tm.tm_hour * 60 + tm.tm_min : -1;
+    s_slp_info.soc = status_bar_soc();
+    int p = pet_sleep_pick_printer(states, cnt, cur);
+    s_slp_info.printing = p >= 0;
+    s_slp_info.idx = p < 0 ? 0 : p;
+    s_slp_info.pct = p < 0 ? 0 : s_pct_cache[p];
+    s_slp_info.name[0] = s_slp_info.product[0] = 0;
+    if (p >= 0) {
+        status_store_get_idx(p, NULL, NULL, NULL, &s_slp_pinfo);
+        snprintf(s_slp_info.name, sizeof s_slp_info.name, "%s", s_slp_pinfo.name);
+        snprintf(s_slp_info.product, sizeof s_slp_info.product, "%s", s_slp_pinfo.product);
+    }
+    pet_sleep_shift_xy(s_slp_shift_pos, &s_slp_info.dx, &s_slp_info.dy);
+}
+
+static void sleep_enter(const pet_state_t *states, int cnt, int cur) {
+    uint8_t face = sleep_face_sanitize(s_cfg.sleep_face);
+    pet_sleep_actions_t a = pet_sleep_actions(face);
+    if (pet_ui_settings_open()) { settings(false); header_refresh(false, 0); }   // 先关设置页,回到打开设置之前那一页
+    s_slp_face = face;
+    s_slp_screen = pet_ui_screen();
+    s_asleep = true;                        // 先置位:从这一刻起按下的键都按「唤醒」处理
+    ESP_LOGI(TAG, "sleep enter face=%u heap free=%u min=%u", (unsigned)face, (unsigned)esp_get_free_heap_size(), (unsigned)esp_get_minimum_free_heap_size());
+    if (a.panel_sleep) {
+        bsp_display_backlight(a.backlight_pct);   // 80 → 0,直接关,不渐变(不调 ledc_fade_func_install)
+        if (bsp_lvgl_lock(1000)) {
+            bsp_display_panel_sleep(true);        // DISPOFF + SLPIN(先等完在途像素)
+            pet_ui_anim_pause(true);
+            pet_ui_render_pause(true);            // 暂停刷屏,对象不释放
+            bsp_lvgl_unlock();
+        }
+        return;
+    }
+    s_slp_refresh_n = 0; s_slp_shift_pos = -1; s_slp_ms = now_ms();
+    sleep_fill_info(states, cnt, cur);
+    if (bsp_lvgl_lock(1000)) {
+        pet_ui_sleep_enter(face, &s_slp_info);
+        pet_ui_refresh_now();
+        lv_mem_monitor_t mm; lv_mem_monitor(&mm);
+        bsp_lvgl_unlock();
+        ESP_LOGI(TAG, "sleep screen lvgl mem used=%u/%u max=%u", (unsigned)(mm.total_size - mm.free_size), (unsigned)mm.total_size, (unsigned)mm.max_used);
+    }
+    bsp_display_wait_idle();
+    bsp_display_backlight(a.backlight_pct);       // 80 → 8%(同一套 LEDC,频率不变)
+}
+
+static void sleep_wake(const char *why) {
+    if (!s_asleep) return;
+    if (s_slp_face == SLEEP_FACE_BLACK) {
+        if (bsp_lvgl_lock(1000)) {
+            bsp_display_panel_sleep(false);       // SLPOUT(>= 120 ms 间隔 + 驱动内 100 ms)
+            pet_ui_render_pause(false);           // 恢复刷屏并整屏失效
+            pet_ui_anim_pause(false);
+            pet_ui_refresh_now();                 // 整屏刷新一次(休眠前那一页)
+            bsp_display_on(true);                 // DISPON:先等像素传完
+            bsp_lvgl_unlock();
+        }
+    } else if (bsp_lvgl_lock(1000)) {
+        pet_ui_sleep_exit();
+        pet_ui_refresh_now();
+        bsp_lvgl_unlock();
+        bsp_display_wait_idle();
+    }
+    bsp_display_backlight(SLEEP_BL_AWAKE_PCT);   // 画面到屏以后才开背光,不会先亮出旧画面
+    s_asleep = false;
+    pet_okkey_init(&s_ok); s_ok_held = false;    // 清掉熄屏前可能残留的中键状态
+    pet_sleep_set_awake(&s_slp, now_ms());
+    ESP_LOGI(TAG, "sleep wake (%s) heap free=%u min=%u", why, (unsigned)esp_get_free_heap_size(), (unsigned)esp_get_minimum_free_heap_size());
+}
+
+// 每轮主循环调用一次(在 states[] 算完之后)
+static void sleep_tick(const pet_state_t *states, int cnt, int cur) {
+    uint32_t now = now_ms();
+    bool demo = status_store_active() == SRC_DEMO;
+    // 自动亮屏:只看「变成」完成/失败/暂停/断料;演示模式不跟踪
+    int pause_idx = -1, hits = 0;
+    if (demo) pet_wake_reset(s_wake_prev);
+    else {
+        pet_state_t eff[PET_MAX_PRINTERS];   // 没有有效报文的机器记成「没见过」:重连后的第一个状态不算变化
+        for (int i = 0; i < cnt && i < PET_MAX_PRINTERS; i++) eff[i] = s_valid_cache[i] ? states[i] : PET_STATE_COUNT;
+        hits = pet_wake_check(s_wake_prev, eff, cnt, &pause_idx);
+    }
+    if (s_wake_req) { s_wake_req = false; sleep_wake("key"); return; }
+    if (hits > 0) {
+        if (s_asleep) {
+            if (pause_idx >= 0 && pet_ui_screen() == UI_PET && !pet_ui_settings_open())
+                select_printer(pause_idx, pause_idx > cur ? 1 : -1, false);   // 暂停不在现有自动跳转里,这里切过去
+            sleep_wake("print state");
+        } else pet_sleep_activity(&s_slp, now);   // 亮着时也重新计时,让人看到
+        return;
+    }
+    bool allowed = pet_sleep_allowed(pet_ui_screen(), s_portal_on, demo, s_cfg.sleep_min);
+    if (s_asleep) {
+        if (!allowed || pet_ui_screen() != s_slp_screen) { sleep_wake("screen"); return; }   // 进了重新登录/到期提醒等
+        if (s_slp_face != SLEEP_FACE_BLACK) {
+            time_t t = time(NULL); struct tm tm; localtime_r(&t, &tm);
+            int key = t > 1700000000 ? tm.tm_hour * 60 + tm.tm_min : -1;
+            if (pet_sleep_refresh_due(s_slp_key, key, s_slp_ms, now)) {
+                s_slp_ms = now; s_slp_refresh_n++;
+                if (pet_sleep_shift_due(key, s_slp_refresh_n)) s_slp_shift_pos = (s_slp_shift_pos + 1) % 4;
+                sleep_fill_info(states, cnt, cur);
+                if (bsp_lvgl_lock(200)) { pet_ui_sleep_update(&s_slp_info); bsp_lvgl_unlock(); }
+            }
+        }
+        return;
+    }
+    if (pet_sleep_tick(&s_slp, now, allowed, s_cfg.sleep_min) == PET_SLEEP_EV_ENTER) sleep_enter(states, cnt, cur);
+}
+
 static void app_task(void *arg) {
     (void)arg;
     uint32_t n = 0;
     job_load();
     pet_switch_init(&s_switch, status_store_count());
+    pet_sleep_init(&s_slp, now_ms());
+    pet_wake_reset(s_wake_prev);
     int last_count = -1;
     bool last_online = false;
     for (;;) {
@@ -370,7 +530,7 @@ static void app_task(void *arg) {
         tick_reset_hold();
         keys_tick();
         int cnt = status_store_count();
-        if (cnt != last_count) { last_count = cnt; pet_switch_init(&s_switch, cnt); s_switch.cur = status_store_current(); header_refresh(false, 0); }
+        if (cnt != last_count) { last_count = cnt; pet_switch_init(&s_switch, cnt); s_switch.cur = status_store_current(); header_refresh(false, 0); pet_wake_reset(s_wake_prev); }
         // 所有机器:更新锁存状态机 + 用时记录;前台显示当前那台
         pet_state_t states[PET_MAX_PRINTERS];
         printer_status_t st, cur_st; link_state_t link = LINK_UNCONFIGURED;
@@ -388,6 +548,8 @@ static void app_task(void *arg) {
                 st.elapsed_min = pet_job_elapsed_min(&s_jobs[i], &st);
             }
             states[i] = pet_machine_update(&s_machines[i], &st);
+            s_pct_cache[i] = st.percent;
+            s_valid_cache[i] = st.valid;
             if (i == cur) { cur_st = st; online = on; }
         }
         // 云端鉴权失败(静默刷新也失败)才进入"要重新扫码"
@@ -396,6 +558,7 @@ static void app_task(void *arg) {
             ui_screen(UI_BOUND, setup_portal_bound_name());
         // 自动跳转:断料/失败/完成停 3 秒后跳过去(设置页/配网页打开时不跳)。
         // v4.2.1:演示模式里完全不自动跳转(演示只演示第一台的状态,跳走会打断演示);退出演示时 set_demo 会重置 s_switch。
+        sleep_tick(states, cnt, cur);   // v4.8 休眠:计时、自动亮屏、B/C 每 60 s 刷新
         int jump = (status_store_active() == SRC_DEMO) ? -1
                  : pet_switch_tick(&s_switch, states, (uint32_t)(esp_timer_get_time() / 1000));
         if (jump >= 0 && pet_ui_screen() == UI_PET && !pet_ui_settings_open()) {
