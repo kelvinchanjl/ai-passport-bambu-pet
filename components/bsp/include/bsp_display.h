@@ -24,6 +24,16 @@ esp_lcd_panel_io_handle_t bsp_display_io(void);
 // 背光亮度 0..100(%)。LEDC PWM,0=全灭。
 void bsp_display_backlight(uint8_t percent);
 
+// v4.8 熄屏(不是 deep sleep):sleep=true 发 DISPOFF(0x28)+ SLPIN(0x10);sleep=false 发 SLPOUT(0x11),
+// 不开显示——调用方整屏刷新一次后再调 bsp_display_on(true)(DISPON 会先等前面排队的像素传完)。
+// ST7789 要求 SLPIN 与 SLPOUT 之间至少 120 ms:这里记录上次时刻,不够就先等。IDF 驱动每条命令后固定再等 100 ms。
+// 背光不在这里动(调用方先关背光再调)。调用方必须持有 LVGL 锁(避免和刷屏同时用 SPI)。
+esp_err_t bsp_display_panel_sleep(bool sleep);
+// DISPON / DISPOFF(0x29/0x28)。走 tx_param,会先等之前排队的像素数据传完。
+esp_err_t bsp_display_on(bool on);
+// 等之前排队的 SPI 像素数据传完(发一条 NOP 0x00)。B/C 唤醒时在开背光前调用,保证新画面已经到屏。
+esp_err_t bsp_display_wait_idle(void);
+
 // deep sleep 专用：关闭显示、让 ST7789 进入 Sleep In，停止背光 PWM，
 // 将 CS/SCLK/MOSI/DC/背光设为安全电平并在 deep sleep 中保持。调用时必须
 // 已阻止 LVGL 刷屏，调用后必须立即进入 deep sleep 或重启。

@@ -11,6 +11,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_timer.h"
 
 static const char *TAG = "bsp_disp";
 
@@ -238,6 +239,34 @@ void bsp_display_backlight(uint8_t percent) {
     uint32_t duty = (max_duty * percent) / 100u;
     ledc_set_duty(BSP_BL_LEDC_MODE, BSP_BL_LEDC_CHANNEL, duty);
     ledc_update_duty(BSP_BL_LEDC_MODE, BSP_BL_LEDC_CHANNEL);
+}
+
+#define BSP_LCD_SLP_SPACING_US 120000   // ST7789:SLPIN↔SLPOUT 之间 >= 120 ms
+static int64_t s_last_slp_us = -BSP_LCD_SLP_SPACING_US;
+
+esp_err_t bsp_display_panel_sleep(bool sleep) {
+    if (!s_ready || !s_panel) return ESP_ERR_INVALID_STATE;
+    esp_err_t e = ESP_OK;
+    if (sleep) {
+        e = esp_lcd_panel_disp_on_off(s_panel, false);          // DISPOFF:先黑掉输出
+        if (e != ESP_OK) ESP_LOGW(TAG, "DISPOFF 失败: %s", esp_err_to_name(e));
+    }
+    int64_t wait = s_last_slp_us + BSP_LCD_SLP_SPACING_US - esp_timer_get_time();
+    if (wait > 0) vTaskDelay(pdMS_TO_TICKS((wait + 999) / 1000) + 1);
+    esp_err_t e2 = esp_lcd_panel_disp_sleep(s_panel, sleep);    // SLPIN / SLPOUT(驱动内等 100 ms)
+    s_last_slp_us = esp_timer_get_time();
+    if (e2 != ESP_OK) ESP_LOGW(TAG, "%s 失败: %s", sleep ? "SLPIN" : "SLPOUT", esp_err_to_name(e2));
+    return e2 != ESP_OK ? e2 : e;
+}
+
+esp_err_t bsp_display_on(bool on) {
+    if (!s_ready || !s_panel) return ESP_ERR_INVALID_STATE;
+    return esp_lcd_panel_disp_on_off(s_panel, on);
+}
+
+esp_err_t bsp_display_wait_idle(void) {
+    if (!s_ready || !s_io) return ESP_ERR_INVALID_STATE;
+    return esp_lcd_panel_io_tx_param(s_io, 0x00, NULL, 0);     // NOP;tx_param 先回收所有在途的像素事务
 }
 
 esp_err_t bsp_display_prepare_deep_sleep(void) {
