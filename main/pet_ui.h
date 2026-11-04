@@ -72,3 +72,7 @@ void pet_ui_sleep_update(const pet_sleep_info_t *info);
 void pet_ui_sleep_exit(void);
 // A/全部:暂停/恢复角色动画与闪烁定时器(C 和 A 都停;不释放对象)
 void pet_ui_anim_pause(bool pause);
+// A:暂停/恢复 LVGL 刷屏(关失效登记 + 暂停刷新定时器,不释放对象);恢复时整屏失效
+void pet_ui_render_pause(bool pause);
+// 立刻整屏刷新一次(lv_refr_now);调用后像素可能仍在 SPI 队列里,开背光前用 bsp_display_wait_idle/bsp_display_on 等完
+void pet_ui_refresh_now(void);

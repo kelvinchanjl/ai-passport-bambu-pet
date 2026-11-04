@@ -83,6 +83,7 @@ void status_bar_poll(void) {
     }
 }
 
+int status_bar_soc(void) { return s_soc; }
 static void set_batt(int soc) {
     if (soc == s_shown_soc) return;
     s_shown_soc = soc;

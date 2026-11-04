@@ -11,6 +11,8 @@
 void status_bar_create(void);
 // 在 pet_app 任务里(不持 LVGL 锁)每轮调用;内部限频 30 s 读一次电量(I2C)。
 void status_bar_poll(void);
+// v4.8:最近一次平滑后的电量(0..100),没有值 = -1。熄屏画面 B/C 用。
+int status_bar_soc(void);
 
 // 纯函数(host 单测用):格式化时间。t_valid=false 或 tm 为空时输出 "--:--"。
 struct tm;

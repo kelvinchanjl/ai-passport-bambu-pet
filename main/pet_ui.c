@@ -6,6 +6,7 @@
 // 状态文案、淡入淡出过渡、爱心互动、数据页。没有复用 demo 菜单/外壳。
 #include "pet_ui.h"
 #include "status_bar.h"
+#include "sleep_logic.h"
 #include "assets/pet_frames.h"
 #include "assets/benchy.h"
 #include "lvgl.h"
@@ -1105,20 +1106,22 @@ static void build_settings(void) {
     lv_obj_t *t = txt(s_set, &font_pet_18, COL_TITLE, 0, 24);
     lv_obj_set_width(t, 240); lv_obj_set_style_text_align(t, LV_TEXT_ALIGN_CENTER, 0);
     UI_TXT(t, "设置");
-    for (int i = 0; i < SET_COUNT; i++) {
-        s_set_rows[i] = rbox(s_set, 20, 70 + i * 50, 200, 40, 10, COL_CARD);
-        s_set_lbl[i] = txt(s_set_rows[i], &font_pet_18, COL_TEXT, 14, 8);
+    for (int i = 0; i < SET_COUNT; i++) {   // v4.8:6 行,布局常量在 pet_ui.h(UI 定稿 v2:y = 54 + i*38,行高 34)
+        s_set_rows[i] = rbox(s_set, SET_ROW_X, pet_set_row_y(i), SET_ROW_W, SET_ROW_H, 10, COL_CARD);
+        s_set_lbl[i] = txt(s_set_rows[i], &font_pet_18, COL_TEXT, SET_TXT_DX, SET_TXT_DY);
     }
-    lv_obj_t *h = txt(s_set, &font_pet_12, COL_GREY, 0, 284);
+    lv_obj_t *h = txt(s_set, &font_pet_12, COL_GREY, 0, SET_HINT_Y);
     lv_obj_set_width(h, 240); lv_obj_set_style_text_align(h, LV_TEXT_ALIGN_CENTER, 0);
     UI_TXT(h, "上下键选择 · 中键确定");
     lv_obj_add_flag(s_set, LV_OBJ_FLAG_HIDDEN);
 }
-void pet_ui_show_settings(bool on, int sel, bool demo_on) {
+void pet_ui_show_settings(bool on, int sel, bool demo_on, uint8_t sleep_min, uint8_t sleep_face) {
     set_hidden(s_set, !on);
     if (on) {
         lv_obj_move_foreground(s_set);
         UI_TXT(s_set_lbl[SET_DEMO], demo_on ? "演示模式：开" : "演示模式：关");
+        UI_TXT(s_set_lbl[SET_SLEEP], pet_set_sleep_label(sleep_min));   // v4.8
+        UI_TXT(s_set_lbl[SET_FACE], pet_set_face_label(sleep_face));    // v4.8
         UI_TXT(s_set_lbl[SET_REPAIR], "重新配网");
         UI_TXT(s_set_lbl[SET_RESET], "恢复出厂设置");   // v4.5.3:单击进确认页,不再在这里按住
         UI_TXT(s_set_lbl[SET_BACK], "返回");
@@ -1418,3 +1421,184 @@ void pet_ui_set_hints(const char *pages, const char *fil) {   // v4.4:首页没�
     if (s_fhint && strcmp(lv_label_get_text(s_fhint), fil)) UI_TXT(s_fhint, fil);
 }
 void pet_ui_filament_scroll_to_end(void) { while (pet_ui_filament_scroll(1)) {} }
+
+// ---------------------------------------------------------------------------
+// v4.8 休眠(熄屏)。A 全黑只暂停刷屏;B 时钟 / C 线线用一个独立的全屏黑底页面(进入时建、唤醒时删)。
+// 对象都在 LVGL 自己的静态内存池里(CONFIG_LV_USE_BUILTIN_MALLOC,36 KB .bss),不占系统堆。
+// C 的线线直接用 idle 第 0 帧(flash 里的 RGB565A8 + A8 换色层),描述符是静态的,不解码、不申请缓冲。
+#define SLP_TXT     0xF4F4F8
+#define SLP_NAME    0xC8CCD6
+#define SLP_BAT     0xD0D4DC
+#define SLP_DIM     0x5A6070
+#define SLP_GREEN   0x00BC44
+#define SLP_RED     0xFF5A5A
+static lv_obj_t *s_slp_scr, *s_slp_wrap, *s_slp_time, *s_slp_bbody, *s_slp_btip, *s_slp_bfill, *s_slp_bpct;
+static lv_obj_t *s_slp_name, *s_slp_track, *s_slp_bar, *s_slp_ppct, *s_slp_img, *s_slp_hair;
+static lv_image_dsc_t s_slp_dsc, s_slp_hair_dsc;
+static int s_slp_face = -1;
+static bool s_anim_paused, s_render_paused;
+
+void pet_ui_anim_pause(bool pause) {
+    if (pause == s_anim_paused) return;
+    s_anim_paused = pause;
+    if (pause) { lv_timer_pause(s_anim_timer); lv_timer_pause(s_blink_timer); }
+    else { lv_timer_resume(s_anim_timer); lv_timer_resume(s_blink_timer); }
+}
+
+// A:暂停刷屏但不动对象。不用 lvgl_port_stop():它让 lv_timer_handler 每次立即返回 1 ms,
+// 本工程 FREERTOS_HZ=1000,LVGL 任务会在熄屏期间每 ~2 ms 空转一次(拿锁/放锁)。
+// 这里关掉失效登记(lv_display_enable_invalidation,计数式,成对调用)并暂停刷新定时器;其它 lv_timer 照常按需唤醒。
+void pet_ui_render_pause(bool pause) {
+    if (pause == s_render_paused) return;
+    s_render_paused = pause;
+    lv_display_t *d = lv_display_get_default();
+    if (!d) return;
+    lv_timer_t *rt = lv_display_get_refr_timer(d);
+    if (pause) {
+        lv_display_enable_invalidation(d, false);
+        if (rt) lv_timer_pause(rt);
+    } else {
+        lv_display_enable_invalidation(d, true);
+        if (rt) lv_timer_resume(rt);
+        lv_obj_invalidate(lv_screen_active());
+        lv_obj_invalidate(lv_layer_top());
+    }
+}
+
+void pet_ui_refresh_now(void) { lv_refr_now(NULL); }
+
+static lv_obj_t *slp_box(lv_obj_t *p, int x, int y, int w, int h, int r, uint32_t col, bool fill) {
+    lv_obj_t *o = lv_obj_create(p);
+    lv_obj_remove_style_all(o);
+    lv_obj_remove_flag(o, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(o, x, y); lv_obj_set_size(o, w, h);
+    lv_obj_set_style_radius(o, r, 0);
+    if (fill) { lv_obj_set_style_bg_color(o, lv_color_hex(col), 0); lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0); }
+    return o;
+}
+static lv_obj_t *slp_label(lv_obj_t *p, const lv_font_t *f, uint32_t col) {
+    lv_obj_t *l = lv_label_create(p);
+    lv_obj_set_style_text_font(l, f, 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(col), 0);
+    lv_label_set_text(l, "");
+    return l;
+}
+static void slp_center_y(lv_obj_t *l, int cy) { lv_obj_set_y(l, cy - lv_font_get_line_height(lv_obj_get_style_text_font(l, 0)) / 2); }
+
+// 电量组:框 20x10 + 头 2x4 + 内腔 16x6(>20% 绿、<=20% 红),间隔 6 px,百分比 font_pet_12;整组水平居中(同状态条画法)
+static void slp_battery(int cy, int soc) {
+    char b[8];
+    if (soc < 0) snprintf(b, sizeof b, "--%%"); else snprintf(b, sizeof b, "%d%%", soc > 100 ? 100 : soc);
+    lv_label_set_text(s_slp_bpct, b);
+    lv_point_t sz; lv_text_get_size(&sz, b, &font_pet_12, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    int total = 22 + 6 + sz.x, x0 = 120 - total / 2;
+    lv_obj_set_pos(s_slp_bbody, x0, cy - 5);
+    lv_obj_set_pos(s_slp_btip, x0 + 20, cy - 2);
+    lv_obj_set_pos(s_slp_bfill, x0 + 2, cy - 3);
+    lv_obj_set_pos(s_slp_bpct, x0 + 28, 0); slp_center_y(s_slp_bpct, cy);
+    uint32_t frame = soc < 0 ? SLP_DIM : SLP_BAT;
+    lv_obj_set_style_border_color(s_slp_bbody, lv_color_hex(frame), 0);
+    lv_obj_set_style_bg_color(s_slp_btip, lv_color_hex(frame), 0);
+    if (soc < 0) lv_obj_add_flag(s_slp_bfill, LV_OBJ_FLAG_HIDDEN);
+    else {
+        int w = (soc * 16 + 50) / 100; if (w < 1) w = 1; if (w > 16) w = 16;
+        lv_obj_set_width(s_slp_bfill, w);
+        lv_obj_set_style_bg_color(s_slp_bfill, lv_color_hex(soc <= 20 ? SLP_RED : SLP_GREEN), 0);
+        lv_obj_remove_flag(s_slp_bfill, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+void pet_ui_sleep_update(const pet_sleep_info_t *in) {
+    if (!s_slp_scr || !in) return;
+    lv_obj_set_pos(s_slp_wrap, in->dx, in->dy);
+    lv_label_set_text(s_slp_time, in->time);
+    if (s_slp_face == SLEEP_FACE_PET) {
+        slp_center_y(s_slp_time, 222);
+        slp_battery(252, in->soc);
+        lv_obj_set_style_image_recolor(s_slp_hair, lv_color_hex(s_fil), 0);
+        return;
+    }
+    int tcy, bcy; pet_sleep_b_layout(in->printing, &tcy, &bcy);
+    slp_center_y(s_slp_time, tcy);
+    slp_battery(bcy, in->soc);
+    set_hidden(s_slp_name, !in->printing); set_hidden(s_slp_track, !in->printing); set_hidden(s_slp_ppct, !in->printing);
+    if (!in->printing) { set_hidden(s_slp_bar, true); return; }
+    char d[64]; display_name(d, sizeof d, in->name, in->product, in->idx);
+    lv_label_set_text(s_slp_name, d);
+    int pct = in->pct < 0 ? 0 : in->pct > 100 ? 100 : in->pct;
+    set_hidden(s_slp_bar, pct == 0);
+    if (pct > 0) lv_obj_set_width(s_slp_bar, 120 * pct / 100 < 1 ? 1 : 120 * pct / 100);
+    lv_label_set_text_fmt(s_slp_ppct, "%d%%", pct);
+}
+
+void pet_ui_sleep_enter(int face, const pet_sleep_info_t *in) {
+    if (s_slp_scr) pet_ui_sleep_exit();
+    s_slp_face = face;
+    pet_ui_anim_pause(true);                         // 停角色动画和闪烁定时器(C 只显示一帧;B 也省 CPU)
+    s_slp_scr = lv_obj_create(NULL);
+    lv_obj_remove_flag(s_slp_scr, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_bg_color(s_slp_scr, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(s_slp_scr, LV_OPA_COVER, 0);
+    s_slp_wrap = slp_box(s_slp_scr, 0, 0, 240, 320, 0, 0, false);   // 透明容器,防残影整体位移
+    if (face == SLEEP_FACE_PET) {
+        const pet_anim_desc_t *a = &PET_ANIMS[PET_IDLE];
+        const pet_frame_desc_t *f = &PET_FRAMES[a->first];   // idle 第 0 帧 = 闭眼带 zzz 的睡觉帧
+        memset(&s_slp_dsc, 0, sizeof s_slp_dsc);
+        s_slp_dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
+        s_slp_dsc.header.w = f->w; s_slp_dsc.header.h = f->h;
+        s_slp_dsc.header.cf = a->kind ? LV_COLOR_FORMAT_RGB565A8 : LV_COLOR_FORMAT_RGB565;
+        s_slp_dsc.header.stride = f->w * 2;
+        s_slp_dsc.data = pet_frames_bin + f->off;
+        s_slp_dsc.data_size = (uint32_t)f->w * f->h * (a->kind ? 3 : 2);
+        s_slp_img = lv_image_create(s_slp_wrap);
+        lv_image_set_src(s_slp_img, &s_slp_dsc);
+        lv_obj_set_pos(s_slp_img, 52, 79);
+        s_slp_hair = lv_image_create(s_slp_wrap);
+        lv_obj_set_style_image_recolor_opa(s_slp_hair, LV_OPA_COVER, 0);
+        if (f->mask_off >= 0) {
+            memset(&s_slp_hair_dsc, 0, sizeof s_slp_hair_dsc);
+            s_slp_hair_dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
+            s_slp_hair_dsc.header.w = f->w; s_slp_hair_dsc.header.h = f->h;
+            s_slp_hair_dsc.header.cf = LV_COLOR_FORMAT_A8; s_slp_hair_dsc.header.stride = f->w;
+            s_slp_hair_dsc.data = pet_frames_bin + f->mask_off; s_slp_hair_dsc.data_size = (uint32_t)f->w * f->h;
+            lv_image_set_src(s_slp_hair, &s_slp_hair_dsc);
+            lv_obj_set_pos(s_slp_hair, 52, 79);
+        } else lv_obj_add_flag(s_slp_hair, LV_OBJ_FLAG_HIDDEN);
+        s_slp_time = slp_label(s_slp_wrap, &font_pet_24, SLP_TXT);
+    } else {
+        s_slp_time = slp_label(s_slp_wrap, &font_pet_36, SLP_TXT);
+        s_slp_name = slp_label(s_slp_wrap, &font_pet_14, SLP_NAME);
+        lv_obj_set_width(s_slp_name, 180); lv_obj_set_x(s_slp_name, 30);
+        lv_obj_set_style_text_align(s_slp_name, LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_long_mode(s_slp_name, LV_LABEL_LONG_DOT);
+        slp_center_y(s_slp_name, 200);
+        s_slp_track = slp_box(s_slp_wrap, 44, 216, 120, 4, 2, COL_TRACK, true);
+        s_slp_bar = slp_box(s_slp_wrap, 44, 216, 1, 4, 2, SLP_GREEN, true);
+        s_slp_ppct = slp_label(s_slp_wrap, &font_pet_14, SLP_TXT);
+        lv_obj_set_x(s_slp_ppct, 170); slp_center_y(s_slp_ppct, 218);
+    }
+    lv_obj_set_width(s_slp_time, 240);
+    lv_obj_set_style_text_align(s_slp_time, LV_TEXT_ALIGN_CENTER, 0);
+    s_slp_bbody = slp_box(s_slp_wrap, 0, 0, 20, 10, 2, 0, false);
+    lv_obj_set_style_border_width(s_slp_bbody, 1, 0);
+    s_slp_btip = slp_box(s_slp_wrap, 0, 0, 2, 4, 1, SLP_BAT, true);
+    s_slp_bfill = slp_box(s_slp_wrap, 0, 0, 16, 6, 1, SLP_GREEN, true);
+    s_slp_bpct = slp_label(s_slp_wrap, &font_pet_12, SLP_BAT);
+    pet_ui_sleep_update(in);
+    lv_obj_add_flag(lv_layer_top(), LV_OBJ_FLAG_HIDDEN);   // 状态条在 B/C 期间隐藏,不然时间显示两遍
+    lv_screen_load(s_slp_scr);
+}
+
+void pet_ui_sleep_exit(void) {
+    lv_obj_remove_flag(lv_layer_top(), LV_OBJ_FLAG_HIDDEN);
+    if (s_slp_scr) {
+        lv_screen_load(s_scr);
+        lv_obj_delete(s_slp_scr);                         // 子对象一起删
+        s_slp_scr = s_slp_wrap = s_slp_time = s_slp_bbody = s_slp_btip = s_slp_bfill = s_slp_bpct = NULL;
+        s_slp_name = s_slp_track = s_slp_bar = s_slp_ppct = s_slp_img = s_slp_hair = NULL;
+    }
+    s_slp_face = -1;
+    pet_ui_anim_pause(false);
+    lv_obj_invalidate(lv_screen_active());
+    lv_obj_invalidate(lv_layer_top());
+}
