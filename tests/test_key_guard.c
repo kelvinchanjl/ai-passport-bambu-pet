@@ -47,5 +47,75 @@ int main(void) {
     assert(!g.armed);
 
     puts("key wake guard state-machine tests: PASS");
+
+    // ---- v4.8 休眠唤醒吞键守卫(key_wake_guard_*)----
+    // 时间单位 us;键 0=上 1=下 2=中
+    key_wake_guard_t w; bool wake;
+    const int64_t MS = 1000;
+    key_wake_guard_init(&w);
+    // 亮屏、未武装:全部正常派发
+    assert(!key_wake_guard_consume(&w, 0, KWG_EV_PRESS, false, 0, &wake) && !wake);
+    assert(!key_wake_guard_consume(&w, 0, KWG_EV_RELEASE, false, 100 * MS, &wake));
+    assert(!key_wake_guard_consume(&w, 0, KWG_EV_OTHER, false, 280 * MS, &wake));
+
+    // 1) 上键唤醒:PRESS 吞并唤醒;RELEASE 吞;RELEASE 后 +180 ms 的 CLICK 吞(旧 key_guard 会漏这一下)
+    int64_t t = 10000 * MS;
+    assert(key_wake_guard_consume(&w, 0, KWG_EV_PRESS, true, t, &wake) && wake);
+    assert(w.armed);
+    assert(key_wake_guard_consume(&w, 0, KWG_EV_RELEASE, false, t + 90 * MS, &wake) && !wake);   // 此时已亮屏(asleep=false)
+    assert(key_wake_guard_consume(&w, 0, KWG_EV_OTHER, false, t + 90 * MS + 180 * MS, &wake));   // CLICK @ release+180 ms
+    assert(key_wake_guard_consume(&w, 0, KWG_EV_OTHER, false, t + 90 * MS + 249 * MS, &wake));   // 尾巴内:仍吞
+    // 尾巴到期(release + 250 ms)后的下一次按键正常派发
+    assert(!key_wake_guard_consume(&w, 1, KWG_EV_PRESS, false, t + 90 * MS + 250 * MS, &wake) && !wake);
+    assert(!w.armed);
+    assert(!key_wake_guard_consume(&w, 1, KWG_EV_RELEASE, false, t + 500 * MS, &wake));
+    assert(!key_wake_guard_consume(&w, 1, KWG_EV_OTHER, false, t + 680 * MS, &wake));
+
+    // 2) 中键长按唤醒:500 ms 的 LONG 吞(不会打开设置页),松开吞
+    key_wake_guard_init(&w); t = 20000 * MS;
+    assert(key_wake_guard_consume(&w, 2, KWG_EV_PRESS, true, t, &wake) && wake);
+    assert(key_wake_guard_consume(&w, 2, KWG_EV_OTHER, false, t + 500 * MS, &wake) && !wake);    // LONG
+    assert(key_wake_guard_consume(&w, 2, KWG_EV_OTHER, false, t + 5000 * MS, &wake));             // 按住 5 s 仍吞(长按没有短超时)
+    assert(key_wake_guard_consume(&w, 2, KWG_EV_RELEASE, false, t + 6000 * MS, &wake));
+    assert(!key_wake_guard_consume(&w, 2, KWG_EV_PRESS, false, t + 6000 * MS + 260 * MS, &wake));  // 尾巴后正常
+
+    // 3) 中键双击唤醒:第二下按下/松开/DOUBLE 都吞(不会切换打印机),尾巴从第二次松开顺延
+    key_wake_guard_init(&w); t = 30000 * MS;
+    assert(key_wake_guard_consume(&w, 2, KWG_EV_PRESS, true, t, &wake) && wake);
+    assert(key_wake_guard_consume(&w, 2, KWG_EV_RELEASE, false, t + 80 * MS, &wake));
+    assert(key_wake_guard_consume(&w, 2, KWG_EV_PRESS, false, t + 200 * MS, &wake) && !wake);      // 第二下,在尾巴内
+    assert(key_wake_guard_consume(&w, 2, KWG_EV_RELEASE, false, t + 280 * MS, &wake));
+    assert(key_wake_guard_consume(&w, 2, KWG_EV_OTHER, false, t + 300 * MS, &wake));                // DOUBLE
+    assert(key_wake_guard_consume(&w, 2, KWG_EV_OTHER, false, t + 280 * MS + 249 * MS, &wake));     // 顺延后的尾巴内
+    assert(!key_wake_guard_consume(&w, 2, KWG_EV_PRESS, false, t + 280 * MS + 250 * MS, &wake));
+
+    // 4) 别的键在尾巴内按下也吞;两个键都松开后才开始算尾巴
+    key_wake_guard_init(&w); t = 40000 * MS;
+    assert(key_wake_guard_consume(&w, 0, KWG_EV_PRESS, true, t, &wake) && wake);
+    assert(key_wake_guard_consume(&w, 1, KWG_EV_PRESS, false, t + 50 * MS, &wake));
+    assert(key_wake_guard_consume(&w, 0, KWG_EV_RELEASE, false, t + 100 * MS, &wake));
+    assert(key_wake_guard_consume(&w, 1, KWG_EV_OTHER, false, t + 600 * MS, &wake));                // 下键还按着:不撤防
+    assert(key_wake_guard_consume(&w, 1, KWG_EV_RELEASE, false, t + 700 * MS, &wake));
+    assert(key_wake_guard_consume(&w, 1, KWG_EV_OTHER, false, t + 880 * MS, &wake));                // 下键 CLICK @ +180 ms
+    assert(!key_wake_guard_consume(&w, 0, KWG_EV_PRESS, false, t + 950 * MS, &wake));               // 700+250 = 950 到期
+
+    // 5) 卡键兜底 30 s
+    key_wake_guard_init(&w); t = 50000 * MS;
+    assert(key_wake_guard_consume(&w, 1, KWG_EV_PRESS, true, t, &wake) && wake);
+    assert(key_wake_guard_consume(&w, 1, KWG_EV_OTHER, false, t + 29999 * MS, &wake));
+    assert(!key_wake_guard_consume(&w, 1, KWG_EV_OTHER, false, t + 30000 * MS, &wake) && !w.armed);
+
+    // 6) 熄屏、未武装时的非 PRESS(熄屏前按着的键的 RELEASE/CLICK):吞,但不唤醒
+    key_wake_guard_init(&w);
+    assert(key_wake_guard_consume(&w, 0, KWG_EV_RELEASE, true, 60000 * MS, &wake) && !wake && !w.armed);
+    assert(key_wake_guard_consume(&w, 0, KWG_EV_OTHER, true, 60180 * MS, &wake) && !wake && !w.armed);
+    // 武装中又睡着(极少见)再按:照样唤醒
+    assert(key_wake_guard_consume(&w, 2, KWG_EV_PRESS, true, 70000 * MS, &wake) && wake);
+    assert(key_wake_guard_consume(&w, 2, KWG_EV_PRESS, true, 70010 * MS, &wake) && wake);
+    // 越界键号不越界访问
+    key_wake_guard_init(&w);
+    assert(key_wake_guard_consume(&w, 7, KWG_EV_PRESS, true, 0, &wake) && wake);
+    assert(KWG_TAIL_US == 250000 && KWG_STUCK_US == 30000000);
+    puts("first-press swallow (click +180 ms / long / double / 250 ms tail / stuck 30 s): PASS");
     return 0;
 }
