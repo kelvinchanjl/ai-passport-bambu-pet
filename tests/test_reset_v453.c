@@ -37,7 +37,7 @@ int main(void) {
     assert(pet_set_step(0, -1, SET_COUNT) == 0);                  // 第一项往上:停住,不会跳到恢复出厂
     assert(pet_set_step(SET_COUNT - 1, 1, SET_COUNT) == SET_COUNT - 1);
     int s = 0; for (int i = 0; i < 10; i++) s = pet_set_step(s, -1, SET_COUNT); assert(s == 0);
-    s = 0; s = pet_set_step(s, 1, SET_COUNT); s = pet_set_step(s, 1, SET_COUNT); assert(s == SET_BACK);
+    s = 0; for (int i = 0; i < SET_BACK; i++) s = pet_set_step(s, 1, SET_COUNT); assert(s == SET_BACK);   // v4.8:6 行(多了 休眠、熄屏画面)
     s = pet_set_step(s, 1, SET_COUNT); assert(s == SET_RESET);
     puts("settings menu does not wrap: PASS");
     puts("test_reset_v453: OK");

@@ -1,6 +1,6 @@
 idf_component_register(
     SRCS "main.c"
-         "pet_logic.c"
+         "pet_logic.c" "sleep_logic.c"
          "pet_ui.c"
          "status_source.c"
          "status_bar.c"

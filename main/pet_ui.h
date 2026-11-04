@@ -29,9 +29,21 @@ bool pet_ui_filament_scroll(int dir);
 void pet_ui_filament_reset_scroll(void);
 // 打印中(挤出)时在用料盘的中心孔慢转(2 秒一圈);其他状态静止
 void pet_ui_filament_set_spinning(bool on);
-// 设置页:items 依次为 演示模式(开/关)、重新配网、恢复出厂设置、返回
-typedef enum { SET_DEMO = 0, SET_REPAIR, SET_BACK, SET_RESET, SET_COUNT } set_item_t;   // v4.5.3:恢复出厂固定在最后(返回之后),红字
-void pet_ui_show_settings(bool on, int sel, bool demo_on);
+// 设置页(v4.8 6 行,UI 定稿 v2):演示模式(开/关)、休眠(关/2/5 分钟)、熄屏画面(全黑/时钟/线线)、重新配网、返回、恢复出厂设置
+typedef enum { SET_DEMO = 0, SET_SLEEP, SET_FACE, SET_REPAIR, SET_BACK, SET_RESET, SET_COUNT } set_item_t;   // v4.5.3:恢复出厂固定在最后(返回之后),红字
+// 行布局集中在这里(改版只改这几行):rbox(s_set, SET_ROW_X, y, SET_ROW_W, SET_ROW_H, 10, col),y = SET_ROW_Y0 + i*SET_ROW_STEP;
+// 文字 font_pet_18 在行内 (SET_TXT_DX, SET_TXT_DY)。标题 y=24、底部提示 y=SET_HINT_Y 不变;最后一行底边 54+5*38+34-1 = 277。
+#define SET_ROW_X     20
+#define SET_ROW_W     200
+#define SET_ROW_Y0    54
+#define SET_ROW_STEP  38
+#define SET_ROW_H     34
+#define SET_TXT_DX    14
+#define SET_TXT_DY    6
+#define SET_HINT_Y    284
+static inline int pet_set_row_y(int i) { return SET_ROW_Y0 + i * SET_ROW_STEP; }
+void pet_ui_show_settings(bool on, int sel, bool demo_on, uint8_t sleep_min, uint8_t sleep_face);
+// 设置页文案见 sleep_logic.h pet_set_sleep_label / pet_set_face_label
 bool pet_ui_settings_open(void);
 // 演示模式右上角「n/6」;step<0 隐藏
 void pet_ui_set_demo_step(int step);
@@ -41,3 +53,22 @@ void pet_ui_filament_scroll_to_end(void);                   // 从首页按上�
 // v4.4.1:没数据时整页「连接中/未连上」(详情/耗材页也一样);有数据 = 正常页面 + 实心绿点
 void pet_ui_set_conn(pet_conn_state_t c);
 pet_conn_state_t pet_ui_conn_shown(void);
+
+// ---- v4.8 熄屏画面 B(时钟)/ C(线线)----
+// 进入:建一个独立的全屏黑底页面并加载,隐藏状态条(lv_layer_top),停角色动画/闪烁定时器;
+// 退出:回到原页面、删掉熄屏页面、恢复状态条和定时器。A(全黑)不用这些(只暂停刷屏)。
+typedef struct {
+    char time[8];         // "HH:MM" 或 "--:--"
+    int soc;              // 0..100;<0 显示 "--%"
+    bool printing;        // B:有打印中的机器
+    char name[48];        // B:机器名(原名,UI 里按字库回退)
+    char product[24];
+    int idx;              // B:机器序号(回退「打印机 N」用)
+    int pct;              // B:进度 0..100
+    int dx, dy;           // 防残影位移
+} pet_sleep_info_t;
+void pet_ui_sleep_enter(int face, const pet_sleep_info_t *info);
+void pet_ui_sleep_update(const pet_sleep_info_t *info);
+void pet_ui_sleep_exit(void);
+// A/全部:暂停/恢复角色动画与闪烁定时器(C 和 A 都停;不释放对象)
+void pet_ui_anim_pause(bool pause);
