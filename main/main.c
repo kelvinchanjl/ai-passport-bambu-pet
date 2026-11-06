@@ -705,5 +705,5 @@ void app_main(void) {
         start_portal(false);
         ESP_LOGI(TAG, "未绑定,进入配网");
     }
-    xTaskCreate(app_task, "pet_app", 6144, NULL, 4, NULL);   // v4.8 hotfix:5120→6144。B 卡死是 pet_app 持锁 lv_refr_now 画字;刷屏已交回 taskLVGL(7168)。+1024 作余量,不加到 8192 以免 min_heap 跌破 40 KB。
+    xTaskCreate(app_task, "pet_app", 5120, NULL, 4, NULL);   // v4.8 hotfix:刷屏已交回 taskLVGL(7168),不再在 pet_app 上 lv_refr_now。栈保持 5120(曾试 6144,真机 B 段 min_heap 40784 低于 40 KB,已调回)。
 }

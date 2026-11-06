@@ -38,8 +38,8 @@ if not m:
     bad.append("pet_app xTaskCreate not found")
 else:
     stack = int(m.group(1))
-    if stack < 6144:
-        bad.append("pet_app stack %d < 6144" % stack)
+    if stack != 5120:
+        bad.append("pet_app stack %d != 5120" % stack)
 
 idx = ui.find("s_slp_name = slp_label")
 if idx < 0:
