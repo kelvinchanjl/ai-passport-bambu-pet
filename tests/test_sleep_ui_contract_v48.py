@@ -39,22 +39,44 @@ if "if (!s_asleep && bsp_lvgl_lock(100))" not in main or "pet_ui_update(states[c
 if "pet_sleep_content_changed" not in main:
     bad.append("B/C sleep tick does not refresh on job/name/pct change")
 
-# sleep_exit 先摘静态指针并切回首页,但不立刻删当前 gone(17:59 B 醒 Load access fault)
+# sleep_exit 先摘指针并 lv_screen_load 首页,再恢复 top;exit 内禁止任何 delete
+# (含旧 s_slp_gone)。B 醒曾崩在 lv_obj_remove_flag(lv_layer_top(), HIDDEN):
+# layer_top parent 为 NULL,LVGL 9 mark_layout_as_dirty 不判空(MTVAL=0x2a)。
 ex = ui.find("void pet_ui_sleep_exit")
 reap = ui.find("void pet_ui_sleep_reap")
 if ex < 0:
     bad.append("pet_ui_sleep_exit missing")
 else:
-    end = reap if reap > ex else ex + 1200
+    end = reap if reap > ex else ex + 1600
     chunk = ui[ex:end]
     if "lv_obj_t *gone = s_slp_scr" not in chunk:
         bad.append("sleep_exit does not snapshot s_slp_scr before nulling")
     if "s_slp_name =" not in chunk:
         bad.append("sleep_exit does not null s_slp_* pointers")
-    if "lv_obj_delete(gone)" in chunk:
-        bad.append("sleep_exit still deletes the current sleep screen immediately")
+    if "lv_obj_delete(" in chunk:
+        bad.append("sleep_exit still calls lv_obj_delete")
     if "s_slp_gone" not in chunk:
         bad.append("sleep_exit does not defer delete via s_slp_gone")
+    load = chunk.find("lv_screen_load")
+    unhide = chunk.find("slp_unhide_top")
+    if load < 0:
+        bad.append("sleep_exit does not lv_screen_load the home screen")
+    if unhide < 0:
+        bad.append("sleep_exit does not unhide top via slp_unhide_top")
+    elif load >= 0 and not (load < unhide):
+        bad.append("sleep_exit unhides top before lv_screen_load")
+
+h = ui.find("static void slp_unhide_top")
+if h < 0:
+    bad.append("slp_unhide_top helper missing")
+else:
+    hchunk = ui[h:ex] if ex > h else ui[h:h + 1400]
+    if "lv_obj_get_parent" not in hchunk:
+        bad.append("slp_unhide_top does not check parent before remove_flag")
+    if "lv_obj_is_valid" not in hchunk:
+        bad.append("slp_unhide_top does not check object validity")
+    if "LV_OBJ_FLAG_HIDDEN" not in hchunk:
+        bad.append("slp_unhide_top does not handle HIDDEN")
 if reap < 0:
     bad.append("pet_ui_sleep_reap missing")
 else:

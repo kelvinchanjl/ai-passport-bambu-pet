@@ -10,6 +10,7 @@
 #include "assets/pet_frames.h"
 #include "assets/benchy.h"
 #include "lvgl.h"
+#include "src/core/lv_obj_private.h"  // slp_unhide_top: layer_top parent 为空时直接清 flags
 #include "sdkconfig.h"
 #include <stdio.h>
 #include <stdarg.h>
@@ -1481,6 +1482,7 @@ void pet_ui_filament_scroll_to_end(void) { while (pet_ui_filament_scroll(1)) {} 
 static lv_obj_t *s_slp_scr, *s_slp_wrap, *s_slp_time, *s_slp_bbody, *s_slp_btip, *s_slp_bfill, *s_slp_bpct;
 static lv_obj_t *s_slp_name, *s_slp_track, *s_slp_bar, *s_slp_ppct, *s_slp_img, *s_slp_hair;
 static lv_obj_t *s_slp_gone;   // 已切走、等一帧后再删的旧 B/C 页
+static lv_obj_t *s_slp_gone2;  // exit 禁止 delete;上一张还没 reap 时再挂一张
 static lv_image_dsc_t s_slp_dsc, s_slp_hair_dsc;
 static int s_slp_face = -1;
 static bool s_anim_paused, s_render_paused;
@@ -1645,30 +1647,65 @@ void pet_ui_sleep_enter(int face, const pet_sleep_info_t *in) {
     lv_screen_load(s_slp_scr);
 }
 
+// layer_top 由 LVGL 以 lv_obj_create(NULL) 创建,parent 恒为 NULL。
+// lv_obj_remove_flag(HIDDEN) 会无条件 mark_layout_as_dirty(parent);
+// mark_layout_as_dirty 不判空,写 obj->layout_inv(偏移 0x2a) → Load access fault。
+static bool slp_top_alive(lv_obj_t *top) {
+    if (!top || !lv_obj_is_valid(top)) return false;
+    uint32_t n = lv_obj_get_child_count(top);
+    for (uint32_t i = 0; i < n; i++) {
+        lv_obj_t *ch = lv_obj_get_child(top, (int32_t)i);
+        if (ch && !lv_obj_is_valid(ch)) return false;
+    }
+    return true;
+}
+
+static void slp_unhide_top(lv_obj_t *top) {
+    if (!slp_top_alive(top)) return;
+    if (!lv_obj_has_flag(top, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_invalidate(top);
+        return;
+    }
+    lv_obj_t *parent = lv_obj_get_parent(top);
+    if (parent && lv_obj_is_valid(parent)) {
+        lv_obj_remove_flag(top, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    top->flags &= ~(lv_obj_flag_t)LV_OBJ_FLAG_HIDDEN;
+    lv_obj_invalidate(top);
+    lv_obj_mark_layout_as_dirty(top);
+}
+
 void pet_ui_sleep_exit(void) {
-    // 先摘掉静态指针再切回首页。旧页先挂在 s_slp_gone,等 taskLVGL 画出首页后再 reap。
-    // 17:59 真机:B 熄屏多次 job/改名/清空后 injwake,立刻 Load access fault;
-    // 当时在 load 首页后同步 lv_obj_delete 旧页,下一帧刷新可能碰到已释放对象。
+    // 先摘静态指针,再 lv_screen_load 首页,最后才恢复 layer_top。
+    // exit 内禁止立刻删页(含上一张 s_slp_gone);reap 只在 sleep_yield_frame 之后。
+    // 2026-11-06 真机 B 醒:MEPC=lv_obj_mark_layout_as_dirty RA=lv_obj_remove_flag MTVAL=0x2a,
+    // 崩在对 lv_layer_top() 做 remove_flag(HIDDEN),不是立刻 delete。
     lv_obj_t *gone = s_slp_scr;
     s_slp_scr = s_slp_wrap = s_slp_time = s_slp_bbody = s_slp_btip = s_slp_bfill = s_slp_bpct = NULL;
     s_slp_name = s_slp_track = s_slp_bar = s_slp_ppct = s_slp_img = s_slp_hair = NULL;
     s_slp_face = -1;
-    lv_obj_t *top = lv_layer_top();
-    if (top) lv_obj_remove_flag(top, LV_OBJ_FLAG_HIDDEN);
     if (s_scr) lv_screen_load(s_scr);
-    if (s_slp_gone && s_slp_gone != gone && s_slp_gone != lv_screen_active() && s_slp_gone != s_scr)
-        lv_obj_delete(s_slp_gone);
-    s_slp_gone = gone;
+    lv_obj_t *top = lv_layer_top();
+    slp_unhide_top(top);
+    if (gone) {
+        if (s_slp_gone && s_slp_gone != gone && s_slp_gone2 != gone && !s_slp_gone2)
+            s_slp_gone2 = s_slp_gone;
+        s_slp_gone = gone;
+    }
     pet_ui_anim_pause(false);
     lv_obj_t *act = lv_screen_active();
-    if (act) lv_obj_invalidate(act);
-    if (top) lv_obj_invalidate(top);
+    if (act && lv_obj_is_valid(act)) lv_obj_invalidate(act);
+    if (top && lv_obj_is_valid(top)) lv_obj_invalidate(top);
 }
 
 void pet_ui_sleep_reap(void) {
-    lv_obj_t *gone = s_slp_gone;
-    s_slp_gone = NULL;
-    if (!gone) return;
-    if (gone == lv_screen_active() || gone == s_scr) return;
-    lv_obj_delete(gone);
+    lv_obj_t *pending[2] = { s_slp_gone, s_slp_gone2 };
+    s_slp_gone = s_slp_gone2 = NULL;
+    for (int i = 0; i < 2; i++) {
+        lv_obj_t *gone = pending[i];
+        if (!gone) continue;
+        if (gone == lv_screen_active() || gone == s_scr) continue;
+        if (lv_obj_is_valid(gone)) lv_obj_delete(gone);
+    }
 }
