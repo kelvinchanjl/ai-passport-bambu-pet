@@ -55,6 +55,8 @@ typedef struct {
 #define PET_MAX_PRINTERS 4
 // 温度文案:target>0 且还在升温(cur < target-2)时 "36→220°C",否则只有当前 "36°C"(不会出现 39/0°C)
 void pet_format_temp(float cur, float target, char *buf, size_t len);
+// 机器名显示:name 且 name_ok(调用方按字库逐字检查)时用原名,否则用 product,再没有就「打印机 N」。
+void pet_fmt_display_name(char *out, size_t len, const char *name, const char *product, int idx, bool name_ok);
 // 详情页进度条右侧的状态字:成功/打印中/暂停/断料/失败/准备中/空闲
 const char *pet_status_word(const printer_status_t *s, pet_state_t st);
 // 耗材颜色 -> 中文颜色名(最近色,HSV 粗分):白色/黑色/灰色/红色/橙色/黄色/绿色/青色/蓝色/紫色/粉色/棕色

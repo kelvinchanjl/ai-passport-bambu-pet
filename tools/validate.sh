@@ -39,6 +39,7 @@ run_host_tests() {
     "$CC" -std=c11 -Wall -Wextra -Werror -Itests/bsp_stubs -Icomponents/bsp/include tests/test_bsp_lvgl_init.c components/bsp/src/bsp_display_rounding.c -o "$t/lvgl_init" && "$t/lvgl_init"
     "$CC" -std=c11 -Wall -Wextra -Werror -Itests/audio_stubs -Icomponents/bsp/include -Icomponents/bsp/src tests/test_bsp_audio_recovery.c components/bsp/src/bsp_es8311_sleep_check.c -o "$t/audio" && "$t/audio"
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_cpu_contract_v441.py
+    PYTHONDONTWRITEBYTECODE=1 python3 tests/test_sleep_ui_contract_v48.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_nvs_compat.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_wifi_blob_nvs_v48.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_no_flash_v452.py

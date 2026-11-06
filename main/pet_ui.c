@@ -795,9 +795,7 @@ static bool font_has_all(const lv_font_t *f, const char *u) {
     return true;
 }
 static void display_name(char *out, size_t len, const char *name, const char *product, int idx) {
-    if (name && name[0] && font_has_all(&font_pet_14, name)) snprintf(out, len, "%s", name);
-    else if (product && product[0]) snprintf(out, len, "%s", product);
-    else snprintf(out, len, "打印机 %d", idx + 1);
+    pet_fmt_display_name(out, len, name, product, idx, name && name[0] && font_has_all(&font_pet_14, name));
 }
 
 static lv_obj_t *mk_hdr_group(lv_obj_t **name, lv_obj_t **dot) {
@@ -1488,7 +1486,7 @@ static void slp_center_y(lv_obj_t *l, int cy) { lv_obj_set_y(l, cy - lv_font_get
 // 电量组:框 20x10 + 头 2x4 + 内腔 16x6(>20% 绿、<=20% 红),间隔 6 px,百分比 font_pet_12;整组水平居中(同状态条画法)
 static void slp_battery(int cy, int soc) {
     char b[8];
-    if (soc < 0) snprintf(b, sizeof b, "--%%"); else snprintf(b, sizeof b, "%d%%", soc > 100 ? 100 : soc);
+    pet_sleep_fmt_batt(soc, b, sizeof b);
     lv_label_set_text(s_slp_bpct, b);
     lv_point_t sz; lv_text_get_size(&sz, b, &font_pet_12, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
     int total = 22 + 6 + sz.x, x0 = 120 - total / 2;
@@ -1528,7 +1526,7 @@ void pet_ui_sleep_update(const pet_sleep_info_t *in) {
     int pct = in->pct < 0 ? 0 : in->pct > 100 ? 100 : in->pct;
     set_hidden(s_slp_bar, pct == 0);
     if (pct > 0) lv_obj_set_width(s_slp_bar, 120 * pct / 100 < 1 ? 1 : 120 * pct / 100);
-    lv_label_set_text_fmt(s_slp_ppct, "%d%%", pct);
+    { char p[8]; pet_sleep_fmt_pct(pct, p, sizeof p); lv_label_set_text(s_slp_ppct, p); }
 }
 
 void pet_ui_sleep_enter(int face, const pet_sleep_info_t *in) {
@@ -1569,9 +1567,13 @@ void pet_ui_sleep_enter(int face, const pet_sleep_info_t *in) {
         s_slp_time = slp_label(s_slp_wrap, &font_pet_36, SLP_TXT);
         s_slp_name = slp_label(s_slp_wrap, &font_pet_14, SLP_NAME);
         lv_obj_set_width(s_slp_name, 180); lv_obj_set_x(s_slp_name, 30);
+        lv_obj_set_height(s_slp_name, lv_font_get_line_height(&font_pet_14));   // 定高一行,避免 LONG_* 在高度为 0 时乱算
         lv_obj_set_style_text_align(s_slp_name, LV_TEXT_ALIGN_CENTER, 0);
-        lv_label_set_long_mode(s_slp_name, LV_LABEL_LONG_DOT);
+        // 不用 LONG_DOT:空文本时 LVGL lv_label 里 while(byte_id + DOT_NUM > txt_len) 可能空转。
+        // 未打印时先隐藏,不参与 B 页首帧布局。
+        lv_label_set_long_mode(s_slp_name, LV_LABEL_LONG_CLIP);
         slp_center_y(s_slp_name, 200);
+        lv_obj_add_flag(s_slp_name, LV_OBJ_FLAG_HIDDEN);
         s_slp_track = slp_box(s_slp_wrap, 44, 216, 120, 4, 2, COL_TRACK, true);
         s_slp_bar = slp_box(s_slp_wrap, 44, 216, 1, 4, 2, SLP_GREEN, true);
         s_slp_ppct = slp_label(s_slp_wrap, &font_pet_14, SLP_TXT);

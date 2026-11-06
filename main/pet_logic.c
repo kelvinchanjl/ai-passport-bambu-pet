@@ -250,6 +250,13 @@ void pet_format_temp(float cur, float target, char *buf, size_t len) {
     else snprintf(buf, len, "%d°C", c);
 }
 
+void pet_fmt_display_name(char *out, size_t len, const char *name, const char *product, int idx, bool name_ok) {
+    if (!out || !len) return;
+    if (name && name[0] && name_ok) snprintf(out, len, "%s", name);
+    else if (product && product[0]) snprintf(out, len, "%s", product);
+    else snprintf(out, len, "打印机 %d", idx + 1);
+}
+
 const char *pet_status_word(const printer_status_t *s, pet_state_t st) {
     switch (st) {
     case PET_DONE: return "成功";

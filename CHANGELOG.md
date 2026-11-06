@@ -4,6 +4,7 @@
 
 ## v4.8.0 (2026-11-04)
 
+- hotfix(2026-11-06):B 时钟熄屏进页后 task_wdt,CPU0=`pet_app` 卡在 `lv_draw_unit_draw_letter`,屏上仍是首页、背光未降。根因是 `sleep_enter`/`sleep_wake` 在 `pet_app`(栈 5120)持锁调用 `lv_refr_now`,把本该跑在 `taskLVGL`(栈 7168)上的整屏刷新压到自己栈上;A 唤醒时同一路径已把 `stack_hw` 打到 312。现改为让出 CPU 给 LVGL 任务画完再改背光;`pet_app` 栈 5120→6144;主循环里的 `states[]`/`printer_status_t` 改静态;B 机器名改 `LONG_CLIP` 并定高、未打印时隐藏。主机补 `pet_sleep_compose_view`(A/B/C 标签文本)和源码契约测试。不加到 8192,以免 min_heap 跌破 40 KB。
 - 新增:**休眠(熄屏)**。无操作 2 分钟(设置页「休眠」可选 关 / 2 分钟 / 5 分钟,默认 2 分钟,存 NVS `petcfg/sleep_min`)后熄屏;「熄屏画面」三选一(`petcfg/sleep_face`,默认全黑):
   - 全黑:背光立即 80 → 0(不渐变),屏幕 DISPOFF + SLPIN,LVGL 暂停刷屏(关失效登记 + 暂停刷新定时器,不释放对象)。醒来 SLPOUT(与 SLPIN 间隔 ≥ 120 ms)→ 整屏刷新 → DISPON → 背光 80。
   - 时钟 / 线线:不进 SLPIN,背光 8%(LEDC 5 kHz 不变),独立的黑底页面每分钟刷新一次,不放动画,隐藏顶部状态栏,每 5 分钟整体位移 ±3 px 防残影。时钟页显示时间、电量和正在打印那台的名字与进度;线线页显示 idle 第 0 帧(按耗材换色)、时间、电量。

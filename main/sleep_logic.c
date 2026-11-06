@@ -1,5 +1,7 @@
 // main/sleep_logic.c — 见 sleep_logic.h
 #include "sleep_logic.h"
+#include <stdio.h>
+#include <string.h>
 
 bool pet_sleep_allowed(ui_screen_t sc, bool portal_on, bool demo, uint8_t sleep_min) {
     if (sleep_min_sanitize(sleep_min) == SLEEP_MIN_OFF) return false;
@@ -87,4 +89,50 @@ const char *pet_set_sleep_label(uint8_t sleep_min) {
 }
 const char *pet_set_face_label(uint8_t sleep_face) {
     switch (sleep_face_sanitize(sleep_face)) { case SLEEP_FACE_CLOCK: return "熄屏画面：时钟"; case SLEEP_FACE_PET: return "熄屏画面：线线"; default: return "熄屏画面：全黑"; }
+}
+
+void pet_sleep_fmt_time(bool synced, int hour, int min, char *out, size_t len) {
+    if (!out || !len) return;
+    if (!synced || hour < 0 || hour > 23 || min < 0 || min > 59) snprintf(out, len, "--:--");
+    else snprintf(out, len, "%02d:%02d", hour, min);
+}
+
+void pet_sleep_fmt_batt(int soc, char *out, size_t len) {
+    if (!out || !len) return;
+    if (soc < 0) snprintf(out, len, "--%%");
+    else snprintf(out, len, "%d%%", soc > 100 ? 100 : soc);
+}
+
+void pet_sleep_fmt_pct(int pct, char *out, size_t len) {
+    if (!out || !len) return;
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+    snprintf(out, len, "%d%%", pct);
+}
+
+void pet_sleep_compose_view(uint8_t face, const char *time, int soc, bool printing,
+                            const char *name, const char *product, int idx, int pct,
+                            bool name_ok, pet_sleep_view_t *out) {
+    if (!out) return;
+    memset(out, 0, sizeof *out);
+    if (time && time[0]) snprintf(out->time, sizeof out->time, "%s", time);
+    else snprintf(out->time, sizeof out->time, "--:--");
+    pet_sleep_fmt_batt(soc, out->batt, sizeof out->batt);
+    face = sleep_face_sanitize(face);
+    if (face == SLEEP_FACE_BLACK) { out->pause_render = true; return; }
+    out->uses_sleep_screen = true;
+    out->show_time = true;
+    out->show_batt = true;
+    if (face == SLEEP_FACE_PET) {
+        out->show_pet = true;
+        out->time_cy = 222;
+        out->batt_cy = 252;
+        return;
+    }
+    out->show_print_row = printing;
+    pet_sleep_b_layout(printing, &out->time_cy, &out->batt_cy);
+    if (printing) {
+        pet_fmt_display_name(out->name, sizeof out->name, name, product, idx, name_ok);
+        pet_sleep_fmt_pct(pct, out->pct, sizeof out->pct);
+    }
 }

@@ -155,6 +155,52 @@ int main(void) {
     assert(!strcmp(pet_set_face_label(9), "熄屏画面：全黑"));
     puts("settings 6 rows layout + index mapping + labels: PASS");
 
+    // ---- A/B/C 三种熄屏会建/更新的标签文本 ----
+    char time[8], batt[8], pct[8], name[64];
+    pet_sleep_fmt_time(false, 14, 42, time, sizeof time); assert(!strcmp(time, "--:--"));
+    pet_sleep_fmt_time(true, 14, 42, time, sizeof time); assert(!strcmp(time, "14:42"));
+    pet_sleep_fmt_time(true, 0, 0, time, sizeof time); assert(!strcmp(time, "00:00"));
+    pet_sleep_fmt_time(true, 24, 0, time, sizeof time); assert(!strcmp(time, "--:--"));
+    pet_sleep_fmt_batt(-1, batt, sizeof batt); assert(!strcmp(batt, "--%"));
+    pet_sleep_fmt_batt(0, batt, sizeof batt); assert(!strcmp(batt, "0%"));
+    pet_sleep_fmt_batt(100, batt, sizeof batt); assert(!strcmp(batt, "100%"));
+    pet_sleep_fmt_batt(250, batt, sizeof batt); assert(!strcmp(batt, "100%"));
+    pet_sleep_fmt_pct(-3, pct, sizeof pct); assert(!strcmp(pct, "0%"));
+    pet_sleep_fmt_pct(47, pct, sizeof pct); assert(!strcmp(pct, "47%"));
+    pet_fmt_display_name(name, sizeof name, "X1C-客厅", "X1C", 0, true);
+    assert(!strcmp(name, "X1C-客厅"));
+    pet_fmt_display_name(name, sizeof name, "叔叔的大打印机", "H2D", 0, false);   // 缺字回退
+    assert(!strcmp(name, "H2D"));
+    pet_fmt_display_name(name, sizeof name, "叔叔的大打印机", "", 2, false);
+    assert(!strcmp(name, "打印机 3"));
+    pet_fmt_display_name(name, sizeof name, "", "P1S", 1, true);
+    assert(!strcmp(name, "P1S"));
+    char longn[80]; memset(longn, 'A', 40); longn[40] = 0;
+    pet_fmt_display_name(name, sizeof name, longn, "P1S", 0, true);
+    assert(!strcmp(name, longn));
+
+    pet_sleep_view_t v;
+    pet_sleep_compose_view(SLEEP_FACE_BLACK, "--:--", 100, false, "X1C", "X1C", 0, 0, true, &v);
+    assert(v.pause_render && !v.uses_sleep_screen && !v.show_time && !v.show_pet && !v.show_print_row);
+
+    pet_sleep_compose_view(SLEEP_FACE_CLOCK, "--:--", -1, false, "X1C", "X1C", 0, 0, true, &v);
+    assert(v.uses_sleep_screen && v.show_time && v.show_batt && !v.show_pet && !v.show_print_row);
+    assert(!strcmp(v.time, "--:--") && !strcmp(v.batt, "--%") && v.time_cy == 136 && v.batt_cy == 172);
+
+    pet_sleep_compose_view(SLEEP_FACE_CLOCK, "14:42", 87, true, "VeryLongPrinterNameABCDEFG", "P1S", 1, 63, true, &v);
+    assert(v.show_print_row && !strcmp(v.time, "14:42") && !strcmp(v.batt, "87%") && !strcmp(v.pct, "63%"));
+    assert(!strcmp(v.name, "VeryLongPrinterNameABCDEFG") && v.time_cy == 118 && v.batt_cy == 154);
+
+    pet_sleep_compose_view(SLEEP_FACE_CLOCK, "09:05", 20, true, "叔叔的大打印机", "H2D", 0, 8, false, &v);
+    assert(v.show_print_row && !strcmp(v.name, "H2D") && !strcmp(v.pct, "8%") && !strcmp(v.batt, "20%"));
+
+    pet_sleep_compose_view(SLEEP_FACE_PET, "14:42", 55, true, "X1C", "X1C", 0, 90, true, &v);
+    assert(v.uses_sleep_screen && v.show_pet && !v.show_print_row && v.show_time && !strcmp(v.time, "14:42"));
+    assert(v.time_cy == 222 && v.batt_cy == 252 && v.name[0] == 0);   // C 不画机器名
+    pet_sleep_compose_view(SLEEP_FACE_PET, "--:--", 0, false, "nope", "", 0, 0, false, &v);
+    assert(v.show_pet && !v.show_print_row && !strcmp(v.time, "--:--") && !strcmp(v.batt, "0%"));
+    puts("A/B/C sleep label text (--:--, time, printing, long/missing-glyph name): PASS");
+
     puts("test_sleep_v48 OK");
     return 0;
 }

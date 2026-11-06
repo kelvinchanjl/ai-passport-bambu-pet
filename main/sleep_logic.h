@@ -61,3 +61,27 @@ void pet_wake_reset(pet_state_t *prev);   // 全部置为「没见过」
 // 设置页文案:「休眠：关 / 2 分钟 / 5 分钟」「熄屏画面：全黑 / 时钟 / 线线」(全角冒号,数字两侧半角空格)
 const char *pet_set_sleep_label(uint8_t sleep_min);
 const char *pet_set_face_label(uint8_t sleep_face);
+
+// B/C 标签上实际会写的文案(纯函数,主机可测)。UI 层用同一套,避免主机测不到的字串路径。
+void pet_sleep_fmt_time(bool synced, int hour, int min, char *out, size_t len);   // "HH:MM" 或 "--:--"
+void pet_sleep_fmt_batt(int soc, char *out, size_t len);                           // "N%" 或 "--%"
+void pet_sleep_fmt_pct(int pct, char *out, size_t len);                            // 打印进度 "N%"
+
+typedef struct {
+    bool uses_sleep_screen;   // B/C 建独立页面
+    bool pause_render;        // 只有 A
+    bool show_time;
+    bool show_batt;
+    bool show_pet;            // C:idle 第 0 帧
+    bool show_print_row;      // B 且正在打印:机器名 + 进度
+    char time[8];
+    char batt[8];
+    char name[64];
+    char pct[8];
+    int time_cy, batt_cy;
+} pet_sleep_view_t;
+
+// 按三种熄屏画面「会建/更新哪些标签」组成一帧要写的文本。name_ok = 原名每个字都在字库里。
+void pet_sleep_compose_view(uint8_t face, const char *time, int soc, bool printing,
+                            const char *name, const char *product, int idx, int pct,
+                            bool name_ok, pet_sleep_view_t *out);

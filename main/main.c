@@ -9,7 +9,7 @@
 //   底部提示只在详情/耗材页、常亮;首页没有提示(布局同 v4.3);演示角标「n/6」只在首页。
 //   断料/失败/完成的机器:停 3 秒后自动跳过去(pet_switch_t 防抖);演示模式里不跳。
 // v4.8 休眠(熄屏):无操作 2/5 分钟(设置页可选 关/2/5,默认 2)熄屏;熄屏画面 A 全黑(默认)/ B 时钟 / C 线线。
-//   A:背光 0 → DISPOFF+SLPIN → 暂停 LVGL 刷屏;醒来 SLPOUT → 恢复刷屏 → 整屏刷新 → DISPON → 背光 80。
+//   A:背光 0 → DISPOFF+SLPIN → 暂停 LVGL 刷屏;醒来 SLPOUT → 恢复刷屏 → 让 taskLVGL 刷一帧 → DISPON → 背光 80。
 //   B/C:不 SLPIN,背光 8%,独立熄屏页面每 60 s 刷新;醒来删页面、背光 80。Wi-Fi/MQTT 不受影响。
 //   熄屏时任意键按下只亮屏(key_wake_guard:整次按键连同之后 250 ms 全吞);打印「变成」完成/失败/暂停/断料时自动亮屏,
 //   暂停时切到那台。配网/二维码/热点/重新登录/恢复出厂确认/演示模式不熄屏。设置页开着时到点:先关设置页再熄屏。
@@ -402,6 +402,15 @@ static void check_expiry(void) {
 
 // ---------------------------------------------------------------------------
 // v4.8 休眠(熄屏)
+// 把整屏刷新交给 taskLVGL(栈 7168)。不要在 pet_app 上调用 lv_refr_now:
+// 真机日志:A 唤醒时同一路径把 stack_hw 打到 312;随后 sleep enter face=1 后 ~5 s
+// task_wdt 报 pet_app 卡在 lv_draw_unit_draw_letter,没有 "sleep screen lvgl mem" 日志,
+// 屏上仍是首页、背光未降 —— 首帧画在 pet_app 持锁的同步刷新里,死循环/栈破坏后没送出去。
+static void sleep_yield_frame(void) {
+    vTaskDelay(pdMS_TO_TICKS(80));
+    bsp_display_wait_idle();
+}
+
 static void sleep_fill_info(const pet_state_t *states, int cnt, int cur) {
     time_t t = time(NULL); struct tm tm; localtime_r(&t, &tm);
     bool valid = t > 1700000000;   // 同 status_bar.c T_VALID:没对时显示 --:--
@@ -442,13 +451,15 @@ static void sleep_enter(const pet_state_t *states, int cnt, int cur) {
     s_slp_refresh_n = 0; s_slp_shift_pos = -1; s_slp_ms = now_ms();
     sleep_fill_info(states, cnt, cur);
     if (bsp_lvgl_lock(1000)) {
+        // A 会 pause 刷屏;若唤醒时没 resume,带着暂停去 load B/C,失效登记仍关着,
+        // 新页面不进脏区。这里成对恢复(已恢复则是空操作)。
+        pet_ui_render_pause(false);
         pet_ui_sleep_enter(face, &s_slp_info);
-        pet_ui_refresh_now();
         lv_mem_monitor_t mm; lv_mem_monitor(&mm);
         bsp_lvgl_unlock();
         ESP_LOGI(TAG, "sleep screen lvgl mem used=%u/%u max=%u", (unsigned)(mm.total_size - mm.free_size), (unsigned)mm.total_size, (unsigned)mm.max_used);
     }
-    bsp_display_wait_idle();
+    sleep_yield_frame();                          // taskLVGL 画完再降背光,避免首页全亮残帧
     bsp_display_backlight(a.backlight_pct);       // 80 → 8%(同一套 LEDC,频率不变)
 }
 
@@ -459,15 +470,17 @@ static void sleep_wake(const char *why) {
             bsp_display_panel_sleep(false);       // SLPOUT(>= 120 ms 间隔 + 驱动内 100 ms)
             pet_ui_render_pause(false);           // 恢复刷屏并整屏失效
             pet_ui_anim_pause(false);
-            pet_ui_refresh_now();                 // 整屏刷新一次(休眠前那一页)
+            bsp_lvgl_unlock();
+        }
+        sleep_yield_frame();                      // 交给 taskLVGL 画休眠前那一页
+        if (bsp_lvgl_lock(1000)) {
             bsp_display_on(true);                 // DISPON:先等像素传完
             bsp_lvgl_unlock();
         }
     } else if (bsp_lvgl_lock(1000)) {
         pet_ui_sleep_exit();
-        pet_ui_refresh_now();
         bsp_lvgl_unlock();
-        bsp_display_wait_idle();
+        sleep_yield_frame();
     }
     bsp_display_backlight(SLEEP_BL_AWAKE_PCT);   // 画面到屏以后才开背光,不会先亮出旧画面
     s_asleep = false;
@@ -532,8 +545,9 @@ static void app_task(void *arg) {
         int cnt = status_store_count();
         if (cnt != last_count) { last_count = cnt; pet_switch_init(&s_switch, cnt); s_switch.cur = status_store_current(); header_refresh(false, 0); pet_wake_reset(s_wake_prev); }
         // 所有机器:更新锁存状态机 + 用时记录;前台显示当前那台
-        pet_state_t states[PET_MAX_PRINTERS];
-        printer_status_t st, cur_st; link_state_t link = LINK_UNCONFIGURED;
+        static pet_state_t states[PET_MAX_PRINTERS];
+        static printer_status_t st, cur_st;      // 静态:不占 pet_app 栈(这两份以前压在栈上,再叠加同步刷屏会把水位打到几百)
+        link_state_t link = LINK_UNCONFIGURED;
         printer_status_reset(&cur_st);
         int cur = status_store_current();
         bool online = false;
@@ -691,5 +705,5 @@ void app_main(void) {
         start_portal(false);
         ESP_LOGI(TAG, "未绑定,进入配网");
     }
-    xTaskCreate(app_task, "pet_app", 5120, NULL, 4, NULL);   // v4.2:循环里多了两份 printer_status_t(v4.3 的 AMS 拷贝是静态的,不占栈)
+    xTaskCreate(app_task, "pet_app", 6144, NULL, 4, NULL);   // v4.8 hotfix:5120→6144。B 卡死是 pet_app 持锁 lv_refr_now 画字;刷屏已交回 taskLVGL(7168)。+1024 作余量,不加到 8192 以免 min_heap 跌破 40 KB。
 }
