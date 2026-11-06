@@ -159,6 +159,8 @@ static void ui_screen(ui_screen_t sc, const char *arg) {
 
 static bool s_portal_cancellable;     // 已配置 + 非 reauth:扫码页可长按退出
 static bool s_portal_return_settings; // 退出后回到设置页(进配网前)
+static void header_refresh(bool animate, int dir);
+static void settings(bool on);
 
 static void start_portal(bool reauth) {
     if (s_portal_on) return;
