@@ -30,6 +30,7 @@ LV_IMAGE_DECLARE(img_ico_nozzle);
 LV_IMAGE_DECLARE(img_ico_bed);
 LV_IMAGE_DECLARE(img_ico_chamber);
 extern const uint8_t pet_frames_bin[];
+static const char *TAG = "ui";
 
 #define COL_TEXT   0xF4F4F8
 #define COL_MUTED  0x8C92A0
@@ -87,6 +88,8 @@ static uint16_t s_canvas_buf[BENCHY_W * BENCHY_H];
 
 static void place_center(lv_obj_t *l, int cy);
 static void build_detail(void);
+static void teardown_detail(void);
+static void teardown_filament(void);
 static void build_header(void);
 static void build_settings(void);
 static void update_detail(pet_state_t st, const printer_status_t *s, link_state_t link);
@@ -366,7 +369,9 @@ static void su_pos(lv_obj_t *o, int x, int y) {   // 位置没变就不动(不�
     lv_obj_set_pos(o, x, y);
 }
 static lv_obj_t *su_box(lv_obj_t *p, int x0, int y0, int x1, int y1, int r, uint32_t col) {   // PIL 矩形 (x0,y0,x1,y1) 含端点
+    if (!p) return NULL;
     lv_obj_t *o = lv_obj_create(p);
+    if (!o) return NULL;
     lv_obj_remove_style_all(o);
     lv_obj_remove_flag(o, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_pos(o, x0, y0); lv_obj_set_size(o, x1 - x0 + 1, y1 - y0 + 1);
@@ -375,7 +380,9 @@ static lv_obj_t *su_box(lv_obj_t *p, int x0, int y0, int x1, int y1, int r, uint
     return o;
 }
 static lv_obj_t *su_lbl(lv_obj_t *p, const lv_font_t *f, uint32_t col, int pil_y) {   // 水平居中(宽 220,x=10)
+    if (!p) return NULL;
     lv_obj_t *l = lv_label_create(p);
+    if (!l) return NULL;
     lv_obj_set_style_text_font(l, f, 0); lv_obj_set_style_text_color(l, lv_color_hex(col), 0);
     lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(l, 220); lv_label_set_long_mode(l, LV_LABEL_LONG_DOT);
@@ -385,13 +392,19 @@ static lv_obj_t *su_lbl(lv_obj_t *p, const lv_font_t *f, uint32_t col, int pil_y
 static void su_set(lv_obj_t *l, const lv_font_t *f, uint32_t col, int pil_y, const char *t) {
     UI_FONT(l, f, 0); UI_TCOL(l, lv_color_hex(col), 0); UI_TXT(l, t); su_pos(l, 10, su_y(f, pil_y)); set_hidden(l, false);
 }
-static void build_setup(void) {
+static bool su_oom(const char *what) {
+    ESP_LOGE(TAG, "build_setup oom (%s)", what);
+    return false;
+}
+static bool build_setup(void) {
     // 普通页面(绑定/重新扫码/到期/恢复出厂)的文字层:透明全屏容器,盖在角色上面
     s_su = lv_obj_create(s_scr);
+    if (!s_su) return su_oom("s_su");
     lv_obj_remove_style_all(s_su);
     lv_obj_remove_flag(s_su, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_size(s_su, 240, 320);
     su_card = su_box(s_su, 14, 38, 226, 112, 12, SU_CARD);            // v4.7.1:整体下移 8px,给顶部状态条让位            // 到期提醒卡片(琥珀色描边 2px)
+    if (!su_card) return su_oom("su_card");
     lv_obj_set_style_border_color(su_card, lv_color_hex(SU_AMB), 0); lv_obj_set_style_border_width(su_card, 2, 0);
     su_card_t1 = su_lbl(s_su, &font_pet_15, SU_W, 50);
     su_card_t2 = su_lbl(s_su, &font_pet_13, SU_AMB, 78);
@@ -399,16 +412,21 @@ static void build_setup(void) {
     su_main = su_lbl(s_su, &font_pet_16, SU_W, 222);
     su_sub = su_lbl(s_su, &font_pet_12, SU_GR, 248);
     su_sub2 = su_lbl(s_su, &font_pet_12, SU_GR, 292);
+    if (!su_card_t1 || !su_card_t2 || !su_title || !su_main || !su_sub || !su_sub2) return su_oom("su labels");
     su_btn = su_box(s_su, 40, 272, 200, 302, 15, SU_GREEN);           // 「按中键重新扫码」
     su_btn_lbl = su_lbl(s_su, &font_pet_13, 0x000000, 277);
+    if (!su_btn || !su_btn_lbl) return su_oom("su_btn");
     su_ring = su_box(s_su, 30, 214, 58, 242, LV_RADIUS_CIRCLE, 0);    // 恢复出厂倒计时圈:红色 2px 描边
+    if (!su_ring) return su_oom("su_ring");
     lv_obj_set_style_bg_opa(su_ring, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_color(su_ring, lv_color_hex(SU_RED), 0); lv_obj_set_style_border_width(su_ring, 2, 0);
     su_ring_lbl = lv_label_create(s_su);
+    if (!su_ring_lbl) return su_oom("su_ring_lbl");
     lv_obj_set_style_text_font(su_ring_lbl, &font_pet_14, 0); lv_obj_set_style_text_color(su_ring_lbl, lv_color_hex(SU_RED), 0);
     lv_obj_set_style_text_align(su_ring_lbl, LV_TEXT_ALIGN_CENTER, 0); lv_obj_set_width(su_ring_lbl, 28);
     lv_label_set_text(su_ring_lbl, ""); lv_obj_set_pos(su_ring_lbl, 30, su_y(&font_pet_14, 217));
     su_rbar = lv_bar_create(s_su);
+    if (!su_rbar) return su_oom("su_rbar");
     lv_obj_set_pos(su_rbar, 68, 222); lv_obj_set_size(su_rbar, 143, 13);
     lv_obj_set_style_radius(su_rbar, 6, LV_PART_MAIN); lv_obj_set_style_radius(su_rbar, 6, LV_PART_INDICATOR);
     lv_obj_set_style_bg_color(su_rbar, lv_color_hex(0x343846), LV_PART_MAIN); lv_obj_set_style_bg_opa(su_rbar, LV_OPA_COVER, LV_PART_MAIN);
@@ -419,37 +437,44 @@ static void build_setup(void) {
 
     // 配网二维码页:黑底整屏盖住角色(设计:不放小角色)
     s_qr_box = lv_obj_create(s_scr);
+    if (!s_qr_box) return su_oom("s_qr_box");
     lv_obj_remove_style_all(s_qr_box);
     lv_obj_remove_flag(s_qr_box, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_size(s_qr_box, 240, 320);
     lv_obj_set_style_bg_color(s_qr_box, lv_color_black(), 0); lv_obj_set_style_bg_opa(s_qr_box, LV_OPA_COVER, 0);
     lv_obj_t *qt = su_lbl(s_qr_box, &font_pet_15, SU_W, 30);
+    if (!qt) return su_oom("qr title");
     lv_label_set_text(qt, "帮我连上 Wi-Fi");
     // 二维码:Passport-XXXX 的 WIFI: 串 = 版本 3(29 模块,ECC M),每模块 3px = 87px;白底 87+16 = 103,顶 y=58,码在 y=66
-    su_box(s_qr_box, (240 - 103) / 2, 58, (240 + 103) / 2, 58 + 103, 8, 0xFFFFFF);
+    if (!su_box(s_qr_box, (240 - 103) / 2, 58, (240 + 103) / 2, 58 + 103, 8, 0xFFFFFF)) return su_oom("qr frame");
     s_qr = lv_qrcode_create(s_qr_box);
+    if (!s_qr) return su_oom("s_qr");
     lv_qrcode_set_size(s_qr, 87);
+    if (!lv_canvas_get_draw_buf(s_qr)) return su_oom("qr canvas");
     lv_qrcode_set_dark_color(s_qr, lv_color_black());
     lv_qrcode_set_light_color(s_qr, lv_color_white());
     lv_obj_set_pos(s_qr, (240 - 87) / 2, 66);
     int y0 = 58 + 103 + 12;
-    su_box(s_qr_box, 14, y0, 226, y0 + 70, 10, SU_CARD);
+    if (!su_box(s_qr_box, 14, y0, 226, y0 + 70, 10, SU_CARD)) return su_oom("qr steps card");
     static const char *const STEPS[3] = { "手机相机扫码", "", "在弹出的网页里填写" };
     static const char *const NUM[3] = { "1", "2", "3" };
     for (int i = 0; i < 3; i++) {
         int yy = y0 + 8 + i * 20;
-        su_box(s_qr_box, 24, yy + 2, 38, yy + 16, LV_RADIUS_CIRCLE, SU_GREEN);
+        if (!su_box(s_qr_box, 24, yy + 2, 38, yy + 16, LV_RADIUS_CIRCLE, SU_GREEN)) return su_oom("qr step dot");
         lv_obj_t *n = lv_label_create(s_qr_box);
+        if (!n) return su_oom("qr step num");
         lv_obj_set_style_text_font(n, &font_pet_10, 0); lv_obj_set_style_text_color(n, lv_color_black(), 0);
         lv_obj_set_style_text_align(n, LV_TEXT_ALIGN_CENTER, 0); lv_obj_set_width(n, 15);
         lv_label_set_text(n, NUM[i]); lv_obj_set_pos(n, 24, su_y(&font_pet_10, yy + 1));
         lv_obj_t *t = lv_label_create(s_qr_box);
+        if (!t) return su_oom("qr step text");
         lv_obj_set_style_text_font(t, &font_pet_12, 0); lv_obj_set_style_text_color(t, lv_color_hex(SU_W), 0);
         lv_obj_set_width(t, 226 - 46 - 4); lv_label_set_long_mode(t, LV_LABEL_LONG_DOT);
         lv_label_set_text(t, STEPS[i]); lv_obj_set_pos(t, 46, su_y(&font_pet_12, yy));
         s_qr_step[i] = t;
     }
     lv_obj_add_flag(s_qr_box, LV_OBJ_FLAG_HIDDEN);
+    return true;
 }
 
 static void destroy_qr_exit_hint(void) {
@@ -461,6 +486,7 @@ static void destroy_qr_exit_hint(void) {
 static void create_qr_exit_hint(void) {
     if (s_qr_hint || !s_qr_box) return;
     s_qr_hint = su_lbl(s_qr_box, &font_pet_12, SU_GR, 262);
+    if (!s_qr_hint) { ESP_LOGW(TAG, "qr exit hint create failed"); return; }
     lv_label_set_text(s_qr_hint, PET_QR_EXIT_HINT);
 }
 
@@ -478,10 +504,22 @@ static void teardown_setup(void) {
         su_card = su_card_t1 = su_card_t2 = su_ring = su_ring_lbl = su_rbar = NULL;
     }
 }
-static void ensure_setup(void) {
-    if (s_su && s_qr_box) return;
+static void setup_release_unused(void) {
+    // 进扫码/绑定页之前先清掉首页用不到的大对象和未 reap 的熄屏页,减轻碎片,给 QR 画布腾连续块。
+    pet_ui_sleep_reap();
+    teardown_filament();
+    teardown_detail();
+}
+static bool ensure_setup(void) {
+    if (s_su && s_qr_box) return true;
     teardown_setup();
-    build_setup();
+    setup_release_unused();
+    if (!build_setup()) {
+        teardown_setup();
+        ESP_LOGE(TAG, "build_setup failed, stay on home");
+        return false;
+    }
+    return true;
 }
 
 void pet_ui_qr_exit_hint(bool show) {
@@ -504,11 +542,21 @@ static int setup_dy(ui_screen_t sc) {   // 设计稿角色锚点 - 固件画布�
 }
 static void setup_apply(ui_screen_t sc, const char *arg) {   // 只在换页时调用
     if (sc == UI_PET) { teardown_setup(); return; }
-    ensure_setup();
+    if (!ensure_setup()) {
+        s_screen = UI_PET;
+        set_hidden(s_title, false); set_hidden(s_info, false);
+        return;
+    }
     bool on = sc != UI_SETUP_QR;
     set_hidden(s_su, !on);
     set_hidden(s_qr_box, sc != UI_SETUP_QR);
     if (sc == UI_SETUP_QR) {
+        if (!s_qr || !s_qr_box || !s_qr_step[1]) {
+            ESP_LOGE(TAG, "setup_apply qr objects missing, fallback home");
+            teardown_setup();
+            s_screen = UI_PET;
+            return;
+        }
         char q[96], st[64]; pet_ap_qr(arg, q, sizeof q); pet_ap_step(arg, st, sizeof st);   // v4.5.2:与 net.c 的 SSID 同源
         lv_qrcode_update(s_qr, q, strlen(q));
         UI_TXT(s_qr_step[1], st);
@@ -810,7 +858,7 @@ void pet_ui_set_screen(ui_screen_t sc, const char *arg) {
     else s_spr_dy = s_conn_shown != PET_CONN_DATA ? CONN_SPR_DY : 0;
     if (sc == UI_RESET) pet_ui_set_reset_progress(5, 0);
     setup_apply(sc, s_screen_arg);
-    if (sc == UI_PET) { set_hidden(s_title, false); set_hidden(s_info, false); }
+    if (s_screen == UI_PET) { set_hidden(s_title, false); set_hidden(s_info, false); }
     update_header_visibility();
     s_reapply = true;              // 让下一次 update 重新套用状态
 }
@@ -1085,6 +1133,14 @@ static void build_detail(void) {
     UI_TXT(s_d_hint, "上下键切页 · 双击中键换机器");
     lv_obj_add_flag(s_page, LV_OBJ_FLAG_HIDDEN);
 }
+static void teardown_detail(void) {
+    if (!s_page) return;
+    lv_obj_delete(s_page);
+    s_page = s_d_task = s_d_pct = s_d_word = s_d_bar = s_d_layer = s_d_rem = NULL;
+    s_d_fil = s_d_sw = s_d_fname = s_d_fsub = s_d_hint = NULL;
+    memset(s_cards, 0, sizeof s_cards);
+    s_detail = false;
+}
 
 static void temp_card(int i, bool valid, float cur, float target, bool has_target) {
     char c[12], t[16];
@@ -1095,7 +1151,7 @@ static void temp_card(int i, bool valid, float cur, float target, bool has_targe
     if (lv_obj_get_x(s_cards[i].tgt) != x) lv_obj_set_x(s_cards[i].tgt, x);
 }
 static void update_detail(pet_state_t st, const printer_status_t *s, link_state_t link) {
-    if (lv_obj_has_flag(s_page, LV_OBJ_FLAG_HIDDEN)) return;
+    if (!s_page || lv_obj_has_flag(s_page, LV_OBJ_FLAG_HIDDEN)) return;
     char b[48];
     UI_TXT(s_d_task, s->subtask[0] ? s->subtask : (s->valid ? "没有打印任务" : link_text(link)));
     int pct = s->percent < 0 ? 0 : (s->percent > 100 ? 100 : s->percent);
@@ -1138,6 +1194,7 @@ static void update_detail(pet_state_t st, const printer_status_t *s, link_state_
 }
 
 void pet_ui_show_detail(bool on, bool show_hint) {
+    if (on && !s_page) build_detail();
     s_detail = on; s_hint_on = show_hint;
     set_hidden(s_page, !on);
     if (on) lv_obj_move_foreground(s_page);
@@ -1422,6 +1479,15 @@ static void build_filament(void) {
     lv_obj_add_flag(s_fpage, LV_OBJ_FLAG_HIDDEN);
     pet_ams_reset(&s_fam);
 }
+static void teardown_filament(void) {
+    if (!s_fpage) return;
+    pet_ui_filament_set_spinning(false);
+    lv_obj_delete(s_fpage);
+    s_fpage = s_fempty = s_fhint = NULL;
+    for (int k = 0; k < F_ROWS; k++) { s_frow[k] = NULL; s_frow_of[k] = -1; }
+    s_fil_on = false;
+    pet_ams_reset(&s_fam);
+}
 void pet_ui_set_filament(const pet_ams_t *a) {
     if (!s_fpage) build_filament();
     if (!memcmp(a, &s_fam, sizeof *a)) return;
@@ -1471,7 +1537,7 @@ void pet_ui_filament_scroll_to_end(void) { while (pet_ui_filament_scroll(1)) {} 
 
 // ---------------------------------------------------------------------------
 // v4.8 休眠(熄屏)。A 全黑只暂停刷屏;B 时钟 / C 线线用一个独立的全屏黑底页面(进入时建、唤醒时删)。
-// 对象都在 LVGL 自己的静态内存池里(CONFIG_LV_USE_BUILTIN_MALLOC,36 KB .bss),不占系统堆。
+// 对象都在 LVGL 自己的静态内存池里(CONFIG_LV_USE_BUILTIN_MALLOC,34 KB .bss),不占系统堆。
 // C 的线线直接用 idle 第 0 帧(flash 里的 RGB565A8 + A8 换色层),描述符是静态的,不解码、不申请缓冲。
 #define SLP_TXT     0xF4F4F8
 #define SLP_NAME    0xC8CCD6
@@ -1579,6 +1645,11 @@ void pet_ui_sleep_update(const pet_sleep_info_t *in) {
     if (!in->printing) { set_hidden(s_slp_bar, true); return; }
     char d[64]; display_name(d, sizeof d, in->name, in->product, in->idx);
     lv_label_set_text(s_slp_name, d);
+    {   // 超宽左对齐,LONG_CLIP 只裁右边(开头可见);不超宽仍居中。不新建对象。
+        lv_point_t nsz;
+        lv_text_get_size(&nsz, d, &font_pet_14, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        lv_obj_set_style_text_align(s_slp_name, nsz.x > 180 ? LV_TEXT_ALIGN_LEFT : LV_TEXT_ALIGN_CENTER, 0);
+    }
     int pct = in->pct < 0 ? 0 : in->pct > 100 ? 100 : in->pct;
     set_hidden(s_slp_bar, pct == 0);
     if (pct > 0) lv_obj_set_width(s_slp_bar, 120 * pct / 100 < 1 ? 1 : 120 * pct / 100);

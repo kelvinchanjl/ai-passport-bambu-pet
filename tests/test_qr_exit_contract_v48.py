@@ -26,7 +26,7 @@ if "s_qr_hint = su_lbl(s_qr_box, &font_pet_12, SU_GR, 262)" not in ui:
 if "lv_label_set_text(s_qr_hint, PET_QR_EXIT_HINT)" not in ui:
     bad.append("s_qr_hint text not set to PET_QR_EXIT_HINT")
 # UI:hint 进「重新配网」才建、退出即删,不要在 build_setup 里常驻
-bs = ui.find("static void build_setup")
+bs = ui.find("static bool build_setup")
 be = ui.find("static void destroy_qr_exit_hint")
 if bs < 0 or be < 0 or be <= bs:
     bad.append("build_setup / destroy_qr_exit_hint missing")

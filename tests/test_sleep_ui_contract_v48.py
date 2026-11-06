@@ -108,6 +108,17 @@ else:
     uchunk = ui[upd:upd + 900]
     if "if (s_slp_hair)" not in uchunk or "lv_obj_set_style_image_recolor(s_slp_hair" not in uchunk:
         bad.append("C sleep_update does not null-check s_slp_hair before recolor")
+    # UI: B 长名超 180 左对齐只裁右边;不超宽仍居中;不新建对象
+    enter_i = ui.find("void pet_ui_sleep_enter")
+    ubig = ui[upd: enter_i if enter_i > upd else upd + 2500]
+    if "LV_TEXT_ALIGN_LEFT" not in ubig:
+        bad.append("B long name does not left-align when overflowing")
+    if "nsz.x > 180" not in ubig and "nsz.x > 180" not in ui:
+        bad.append("B name overflow threshold is not 180")
+    if "lv_text_get_size(&nsz, d, &font_pet_14" not in ubig:
+        bad.append("B name width is not measured before changing align")
+    if "LV_TEXT_ALIGN_CENTER" not in ubig:
+        bad.append("B short name does not stay centered")
 
 m = re.search(r'xTaskCreate\(app_task,\s*"pet_app",\s*(\d+)', main)
 if not m:

@@ -43,6 +43,7 @@
 #if CONFIG_PET_DEBUG_STATUS_INJECT && !CONFIG_PET_TEST_SHORT_EXPIRY
 #include "driver/usb_serial_jtag.h"
 #include "driver/usb_serial_jtag_vfs.h"
+#include "mbedtls/base64.h"
 #endif
 
 static const char *TAG = "pet";
@@ -174,6 +175,13 @@ static void start_portal(bool reauth) {
     s_portal_on = setup_portal_start(&s_cfg, reauth);
     if (s_portal_on) {
         ui_screen(UI_SETUP_QR, setup_portal_ap_name());
+        if (pet_ui_screen() != UI_SETUP_QR) {
+            setup_portal_stop();
+            s_portal_on = false;
+            s_portal_cancellable = false;
+            ESP_LOGE(TAG, "qr page failed (lvgl oom?), portal stopped");
+            return;
+        }
         if (bsp_lvgl_lock(200)) { pet_ui_qr_exit_hint(s_portal_cancellable); bsp_lvgl_unlock(); }
     }
 }
@@ -590,7 +598,7 @@ static void inject_rename(void) {
     for (int i = 0; i < n && i < PET_MAX_PRINTERS; i++)
         status_store_get_idx(i, NULL, NULL, NULL, &info[i]);
     static unsigned seq;
-    snprintf(info[0].name, sizeof info[0].name, "InjName-%u", ++seq);
+    snprintf(info[0].name, sizeof info[0].name, "LongName-%02u-ABCDEFGHIJKLMNOPQRSTUVWXYZ", ++seq);
     if (!info[0].product[0]) snprintf(info[0].product, sizeof info[0].product, "H2C");
     status_store_set_info(status_store_active(), n, info);
     ESP_LOGW(TAG, "inject rename -> %s (asleep=%d)", info[0].name, (int)s_asleep);
@@ -606,17 +614,112 @@ static void inject_clear(void) {
     status_store_set_idx(status_store_active(), 0, &st);
     ESP_LOGW(TAG, "inject clear (asleep=%d)", (int)s_asleep);
 }
+#if CONFIG_PET_DEBUG_STATUS_INJECT && !CONFIG_PET_TEST_SHORT_EXPIRY
+static volatile bool s_cap;
+static volatile int s_cap_rows;
+static char s_cap_tag[16];
+static unsigned char s_cap_b64[244 * 2 * 4 / 3 + 8];
+static bool s_cap_row_seen[320];
+static void inject_flush_ev(lv_event_t *e) {
+    if (!s_cap) return;
+    lv_display_t *d = lv_event_get_target(e);
+    const lv_area_t *a = lv_event_get_param(e);
+    lv_draw_buf_t *b = lv_display_get_buf_active(d);
+    if (!a || !b || !b->data) return;
+    int w = a->x2 - a->x1 + 1;
+    if (w <= 0) return;
+    for (int y = a->y1; y <= a->y2; y++) {
+        const uint8_t *row = b->data + (y - a->y1) * b->header.stride;
+        size_t ol = 0;
+        if (mbedtls_base64_encode(s_cap_b64, sizeof s_cap_b64, &ol, row, (size_t)w * 2) != 0) continue;
+        s_cap_b64[ol] = 0;
+        printf("@FB %d %d %d %s\n", y, (int)a->x1, (int)a->x2, s_cap_b64);
+        if (y >= 0 && y < 320 && !s_cap_row_seen[y]) { s_cap_row_seen[y] = true; s_cap_rows++; }
+    }
+    if (s_cap_rows >= lv_display_get_vertical_resolution(d)) {
+        s_cap = false;
+        printf("@FBEND %s %d\n", s_cap_tag, s_cap_rows);
+        fflush(stdout);
+    }
+}
+static void inject_cap_start(const char *tag) {
+    lv_display_t *d = lv_display_get_default();
+    if (!d || s_cap) { ESP_LOGW(TAG, "inject cap skip (d=%p busy=%d)", (void *)d, (int)s_cap); return; }
+    snprintf(s_cap_tag, sizeof s_cap_tag, "%s", tag && tag[0] ? tag : "screen");
+    memset(s_cap_row_seen, 0, sizeof s_cap_row_seen); s_cap_rows = 0;
+    printf("@FBBEGIN %s %d %d\n", s_cap_tag,
+           (int)lv_display_get_horizontal_resolution(d),
+           (int)lv_display_get_vertical_resolution(d));
+    s_cap = true;
+    lv_obj_invalidate(lv_screen_active());
+    lv_obj_invalidate(lv_layer_top());
+}
+#endif
 static bool handle_inject_cmd(const char *cmd) {
     if (!cmd || !cmd[0]) return false;
     if (!strcmp(cmd, "injjob")) { inject_job(); return true; }
     if (!strcmp(cmd, "injren")) { inject_rename(); return true; }
     if (!strcmp(cmd, "injclr")) { inject_clear(); return true; }
     if (!strcmp(cmd, "injwake")) { s_wake_req = true; ESP_LOGW(TAG, "inject wake"); return true; }
+    if (!strcmp(cmd, "injsleep")) {
+        if (s_asleep) { ESP_LOGW(TAG, "inject sleep ignored (already asleep)"); return true; }
+        if (sleep_min_sanitize(s_cfg.sleep_min) == SLEEP_MIN_OFF) {
+            ESP_LOGW(TAG, "inject sleep ignored (sleep_min off)"); return true;
+        }
+        s_slp.idle_since_ms = now_ms() - (uint32_t)sleep_min_sanitize(s_cfg.sleep_min) * 60000u;
+        ESP_LOGW(TAG, "inject sleep (idle backdated)");
+        return true;
+    }
     if (!strncmp(cmd, "injface ", 8)) {
         s_cfg.sleep_face = sleep_face_sanitize((uint8_t)atoi(cmd + 8));
         ESP_LOGW(TAG, "inject sleep_face -> %u", (unsigned)s_cfg.sleep_face);
         return true;
     }
+    if (!strcmp(cmd, "injmem")) {
+        if (bsp_lvgl_lock(200)) {
+            lv_mem_monitor_t mm; lv_mem_monitor(&mm);
+            bsp_lvgl_unlock();
+            ESP_LOGI(TAG, "injmem lvgl used=%u/%u free=%u max=%u frag=%u%%",
+                     (unsigned)(mm.total_size - mm.free_size), (unsigned)mm.total_size,
+                     (unsigned)mm.free_size, (unsigned)mm.max_used, (unsigned)mm.frag_pct);
+        }
+        return true;
+    }
+    if (!strncmp(cmd, "injpg ", 6)) {
+        if (s_asleep) { ESP_LOGW(TAG, "inject page ignored (asleep)"); return true; }
+        int p = atoi(cmd + 6);
+        if (pet_ui_settings_open()) settings(false);
+        goto_page(p, 1);
+        ESP_LOGW(TAG, "inject page -> %d", p);
+        return true;
+    }
+    if (!strcmp(cmd, "injset")) {
+        if (s_asleep) { ESP_LOGW(TAG, "inject settings ignored (asleep)"); return true; }
+        if (s_portal_on) { ESP_LOGW(TAG, "inject settings ignored (portal)"); return true; }
+        settings(true);
+        ESP_LOGW(TAG, "inject settings");
+        return true;
+    }
+    if (!strcmp(cmd, "injqr")) {
+        if (s_asleep) { ESP_LOGW(TAG, "inject qr ignored (asleep)"); return true; }
+        settings(false);
+        start_portal(false);
+        ESP_LOGW(TAG, "inject qr hint=%d", (int)s_portal_cancellable);
+        return true;
+    }
+    if (!strcmp(cmd, "injqroff")) {
+        if (s_portal_on) stop_portal_to_prev();
+        ESP_LOGW(TAG, "inject qr off");
+        return true;
+    }
+#if CONFIG_PET_DEBUG_STATUS_INJECT && !CONFIG_PET_TEST_SHORT_EXPIRY
+    if (!strcmp(cmd, "injcap") || !strncmp(cmd, "injcap ", 7)) {
+        const char *tag = (cmd[6] == ' ') ? cmd + 7 : "screen";
+        if (bsp_lvgl_lock(500)) { inject_cap_start(tag); bsp_lvgl_unlock(); }
+        ESP_LOGW(TAG, "inject cap %s", tag);
+        return true;
+    }
+#endif
     return false;
 }
 #if CONFIG_PET_DEBUG_STATUS_INJECT && !CONFIG_PET_TEST_SHORT_EXPIRY
@@ -629,8 +732,13 @@ static void poll_inject_stdin(void) {
     if (!inited) {
         usb_serial_jtag_driver_config_t cfg = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
         cfg.rx_buffer_size = 256;
-        cfg.tx_buffer_size = 256;
+        cfg.tx_buffer_size = 1024;   // 一帧行 base64 ~640 B
         if (usb_serial_jtag_driver_install(&cfg) == ESP_OK) usb_serial_jtag_vfs_use_driver();
+        if (bsp_lvgl_lock(200)) {
+            lv_display_t *d = lv_display_get_default();
+            if (d) lv_display_add_event_cb(d, inject_flush_ev, LV_EVENT_FLUSH_START, NULL);
+            bsp_lvgl_unlock();
+        }
         inited = true;
     }
     uint8_t c;

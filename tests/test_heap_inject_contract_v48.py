@@ -26,10 +26,20 @@ if "void pet_ui_sleep_reap" not in ui:
     bad.append("sleep reap (deferred delete) missing")
 if "lv_obj_delete(gone)" not in ui:
     bad.append("old sleep screen is never deleted")
-if "CONFIG_LV_MEM_SIZE_KILOBYTES=32" not in defaults:
-    bad.append("LVGL pool is not 32 KB (expected 36→32, return 4 KB to system heap)")
+if "CONFIG_LV_MEM_SIZE_KILOBYTES=34" not in defaults:
+    bad.append("LVGL pool is not 34 KB (32→34; system heap still has margin, QR page needs contiguous LVGL room)")
+if "CONFIG_LV_MEM_SIZE_KILOBYTES=32" in defaults:
+    bad.append("LVGL pool still 32 KB in sdkconfig.defaults")
 if "CONFIG_LV_MEM_SIZE_KILOBYTES=36" in defaults:
     bad.append("LVGL pool still 36 KB in sdkconfig.defaults")
+if "setup_release_unused()" not in ui:
+    bad.append("build_setup does not release unused home/sleep objects first")
+if "teardown_filament()" not in ui or "teardown_detail()" not in ui:
+    bad.append("unused detail/filament pages are not torn down before setup")
+if 'build_setup oom' not in ui or "return su_oom" not in ui:
+    bad.append("build_setup does not null-check creates / log oom")
+if "stay on home" not in ui:
+    bad.append("build_setup failure does not fall back to home")
 
 # Hint + setup not resident on home
 if "create_qr_exit_hint()" not in ui or "destroy_qr_exit_hint()" not in ui:

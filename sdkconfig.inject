@@ -1,4 +1,6 @@
-# 仅内部真机用:正式默认值 + 状态注入串口命令(不带 TEST 标/短过期/报文字段日志)。
+# 仅内部真机用:正式默认值 + 状态注入串口命令(不带 TEST 标/短过期)。
 #   idf.py -B build_inject -D SDKCONFIG=build_inject/sdkconfig -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.inject" build
 # 发布包不要用这个文件。
 CONFIG_PET_DEBUG_STATUS_INJECT=y
+# 真机核对 MQTT 分片/字段(进度、剩余、AMS、耗材色);只影响调试包日志。
+CONFIG_PET_LOG_REPORT_KEYS=y

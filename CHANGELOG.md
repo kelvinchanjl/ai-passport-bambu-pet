@@ -4,6 +4,7 @@
 
 ## v4.8.0 (2026-11-04)
 
+- hotfix(2026-11-06):LVGL 池 32KB→34KB(系统堆余量够)。进扫码/build_setup 前释放未 reap 的熄屏页、详情页和耗材页,减轻碎片;每个 create 判空,失败拆掉半成品、退回首页并打日志,禁止对空指针写导致 Store access fault。B 熄屏长名(`LONG_CLIP`)宽度超过 180 时左对齐只裁右边(开头可见),不超宽仍居中,不新建对象。
 - hotfix(2026-11-06):449de89 把旧 B/C 页延后到下一帧再删之后,B 醒仍 Load access fault。MEPC=`lv_obj_mark_layout_as_dirty`,RA=`lv_obj_remove_flag`,MTVAL=`0x2a`,调用点 `pet_ui_sleep_exit` 对 `lv_layer_top()` 做 `remove_flag(HIDDEN)`。`layer_top` 由 `lv_obj_create(NULL)` 创建、parent 恒为 NULL;LVGL 9 的 `remove_flag(HIDDEN)` 无条件 `mark_layout_as_dirty(parent)`,该函数不判空,写 `layout_inv`(偏移 0x2a)。现改为先 `lv_screen_load` 首页,再安全恢复 top(parent 为空时直接清 HIDDEN 标志并 `mark_layout_as_dirty(top)`,不走 `remove_flag`);exit 内不再 `lv_obj_delete`(含旧 `s_slp_gone`),只在 `sleep_yield_frame` 之后 reap;并对 top/children 做 `lv_obj_is_valid` 检查。
 - hotfix(2026-11-06):2026-11-06 17:59 C 熄屏路径 Load access fault。当时在 inject 调试包上:B 熄屏 hold 结束 → injwake → injface 2 后立刻 Guru Meditation。测试脚本见到首行就停读,未记下 MEPC/MTVAL/backtrace。时序上 A 醒、B 进入、B 段 9 次 job/改名/清空刷新都成功,第一次从 B 醒来(切回首页后立刻 `lv_obj_delete` 旧熄屏页)即崩。现改为 `pet_ui_sleep_exit` 只摘指针并 `lv_screen_load` 首页,等 `taskLVGL` 画出一帧后再 `pet_ui_sleep_reap` 删旧页;C 刷新对 `s_slp_hair` 空指针守卫。
 - hotfix(2026-11-06):压堆以把连云后 min_heap 稳定做到 ≥ 40,960。MQTT 入站缓冲 4096→2048、出站 1024→256(省 2,816 B 堆);过滤缓冲 FILT_CAP 4KB→3KB(省 1,024 B BSS);LVGL 池 36KB→32KB(省 4,096 B 系统堆:熄屏页/配网页已不常驻,把池内空闲还回系统堆)。熄屏页本就是进睡再建、醒来销毁。扫码页及「长按中键 返回」提示改为进入「重新配网」时再创建、退出时删除,首页不常驻。调试/测试构建增加串口命令 injjob/injren/injclr(以及 injwake/injface N)向状态源注入假的 job 更新、改名和清空;发布包不带这些命令。
