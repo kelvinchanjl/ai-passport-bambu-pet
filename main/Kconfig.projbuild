@@ -24,6 +24,16 @@ menu "Desk Pet (Bambu)"
             Internal acceptance build only. After a successful bind/re-login the stored expiry is
             set to now+10 min, the reminder shows minutes left in the last 3 minutes (once per
             token), expiry opens the re-scan screen, and a TEST badge is drawn. Never ship.
+    config PET_DEBUG_STATUS_INJECT
+        bool "INTERNAL DEBUG: serial inject of fake job/rename/clear (never ship)"
+        default n
+        help
+            Debug/test builds only. Accepts serial lines injjob / injren / injclr
+            (and injwake / injface N) to push fake job updates, a rename, or a
+            job clear into the active status source so B/C sleep refresh can be
+            exercised on device. Official release builds must leave this off;
+            the command strings are compiled out.
+
     config PET_LOG_REPORT_KEYS
         bool "Log which report fields arrive (v4.2 field check, no values/serials)"
         default n

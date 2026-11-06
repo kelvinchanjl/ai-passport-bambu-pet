@@ -29,7 +29,7 @@
 
 static const char *TAG = "bambu";
 #define MAX_MSG (64 * 1024)   // v4.4.3:原始报文上限(只是防呆;报文不再整条缓冲)
-#define FILT_CAP (4 * 1024)   // v4.6 heap:H2C+4 AMS 约 2.2KB;6KB 余量过大,收到 4KB 省 2KB BSS
+#define FILT_CAP (3 * 1024)   // v4.8 heap:H2C+4 AMS 约 2.2KB;4KB→3KB 再省 1KB BSS(系统堆 +1024),仍留约 900B
 
 static app_config_t *s_cfg;
 static esp_mqtt_client_handle_t s_mqtt;
@@ -216,7 +216,7 @@ static void start_mqtt(void) {
                          .authentication.password = s_lan ? s_cfg->lan_code : s_cfg->token },
         .session.keepalive = 60,
         .network = { .reconnect_timeout_ms = 10000, .timeout_ms = 15000 },
-        .buffer = { .size = 4096, .out_size = 1024 },
+        .buffer = { .size = 2048, .out_size = 256 },   // 流式过滤后入站按分片到;出站仅 pushall(~90B)。相对 4096+1024 省 2816 堆
         .task.stack_size = 6144,
     };
     if (s_lan) {

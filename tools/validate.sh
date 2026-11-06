@@ -42,6 +42,7 @@ run_host_tests() {
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_cpu_contract_v441.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_sleep_ui_contract_v48.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_qr_exit_contract_v48.py
+    PYTHONDONTWRITEBYTECODE=1 python3 tests/test_heap_inject_contract_v48.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_nvs_compat.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_wifi_blob_nvs_v48.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_no_flash_v452.py

@@ -25,15 +25,23 @@ if "s_qr_hint = su_lbl(s_qr_box, &font_pet_12, SU_GR, 262)" not in ui:
     bad.append("s_qr_hint not created with su_lbl(..., font_pet_12, SU_GR, 262)")
 if "lv_label_set_text(s_qr_hint, PET_QR_EXIT_HINT)" not in ui:
     bad.append("s_qr_hint text not set to PET_QR_EXIT_HINT")
-idx = ui.find("s_qr_hint = su_lbl")
-if idx >= 0:
-    chunk = ui[idx:idx+400]
-    if "LV_OBJ_FLAG_HIDDEN" not in chunk:
-        bad.append("s_qr_hint is not hidden by default after create")
+# UI:hint 进「重新配网」才建、退出即删,不要在 build_setup 里常驻
+bs = ui.find("static void build_setup")
+be = ui.find("static void destroy_qr_exit_hint")
+if bs < 0 or be < 0 or be <= bs:
+    bad.append("build_setup / destroy_qr_exit_hint missing")
+elif "s_qr_hint = su_lbl" in ui[bs:be]:
+    bad.append("s_qr_hint is still created inside build_setup (must not be resident)")
 if "void pet_ui_qr_exit_hint(bool show)" not in ui:
     bad.append("pet_ui_qr_exit_hint missing")
+if "create_qr_exit_hint()" not in ui:
+    bad.append("pet_ui_qr_exit_hint does not create hint on show")
+if "destroy_qr_exit_hint()" not in ui:
+    bad.append("hint is not deleted on hide/teardown")
 if "set_hidden(s_qr_hint, true)" not in ui:
     bad.append("setup_apply does not hide hint by default on QR page")
+if "teardown_setup()" not in ui or "if (sc == UI_PET) { teardown_setup(); return; }" not in ui:
+    bad.append("setup pages/hint are not torn down when returning to UI_PET")
 
 if "pet_portal_exit_plan(s_cloud_ok, reauth)" not in main:
     bad.append("start_portal does not use pet_portal_exit_plan(s_cloud_ok, reauth)")

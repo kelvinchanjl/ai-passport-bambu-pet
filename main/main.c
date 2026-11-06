@@ -40,6 +40,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#if CONFIG_PET_DEBUG_STATUS_INJECT && !CONFIG_PET_TEST_SHORT_EXPIRY
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 static const char *TAG = "pet";
 
@@ -562,6 +566,73 @@ static void sleep_tick(const pet_state_t *states, int cnt, int cur) {
     if (pet_sleep_tick(&s_slp, now, allowed, s_cfg.sleep_min) == PET_SLEEP_EV_ENTER) sleep_enter(states, cnt, cur);
 }
 
+#if CONFIG_PET_DEBUG_STATUS_INJECT || CONFIG_PET_TEST_SHORT_EXPIRY
+// 仅调试/测试构建:往当前状态源写入假的 job/改名/清空,供 B/C 熄屏刷新真机过一遍。发布包不编译。
+static void inject_job(void) {
+    printer_status_t st;
+    status_store_get_idx(0, &st, NULL, NULL, NULL);
+    st.valid = true;
+    if (st.n_nozzles <= 0) { st.n_nozzles = 1; st.noz[0] = 220.0f; st.noz_t[0] = 220.0f; }
+    snprintf(st.gcode_state, sizeof st.gcode_state, "RUNNING");
+    static unsigned seq;
+    snprintf(st.job_id, sizeof st.job_id, "inj%u", ++seq);
+    snprintf(st.subtask, sizeof st.subtask, "inject_job");
+    st.percent = 20 + (int)(seq * 17 % 60);
+    status_store_set_idx(status_store_active(), 0, &st);
+    ESP_LOGW(TAG, "inject job id=%s pct=%d (asleep=%d)", st.job_id, st.percent, (int)s_asleep);
+}
+static void inject_rename(void) {
+    int n = status_store_count();
+    if (n < 1) n = 1;
+    printer_info_t info[PET_MAX_PRINTERS];
+    for (int i = 0; i < n && i < PET_MAX_PRINTERS; i++)
+        status_store_get_idx(i, NULL, NULL, NULL, &info[i]);
+    static unsigned seq;
+    snprintf(info[0].name, sizeof info[0].name, "InjName-%u", ++seq);
+    if (!info[0].product[0]) snprintf(info[0].product, sizeof info[0].product, "H2C");
+    status_store_set_info(status_store_active(), n, info);
+    ESP_LOGW(TAG, "inject rename -> %s (asleep=%d)", info[0].name, (int)s_asleep);
+}
+static void inject_clear(void) {
+    printer_status_t st;
+    status_store_get_idx(0, &st, NULL, NULL, NULL);
+    st.valid = true;
+    snprintf(st.gcode_state, sizeof st.gcode_state, "IDLE");
+    st.job_id[0] = 0;
+    st.subtask[0] = 0;
+    st.percent = 0;
+    status_store_set_idx(status_store_active(), 0, &st);
+    ESP_LOGW(TAG, "inject clear (asleep=%d)", (int)s_asleep);
+}
+static bool handle_inject_cmd(const char *cmd) {
+    if (!cmd || !cmd[0]) return false;
+    if (!strcmp(cmd, "injjob")) { inject_job(); return true; }
+    if (!strcmp(cmd, "injren")) { inject_rename(); return true; }
+    if (!strcmp(cmd, "injclr")) { inject_clear(); return true; }
+    if (!strcmp(cmd, "injwake")) { s_wake_req = true; ESP_LOGW(TAG, "inject wake"); return true; }
+    if (!strncmp(cmd, "injface ", 8)) {
+        s_cfg.sleep_face = sleep_face_sanitize((uint8_t)atoi(cmd + 8));
+        ESP_LOGW(TAG, "inject sleep_face -> %u", (unsigned)s_cfg.sleep_face);
+        return true;
+    }
+    return false;
+}
+#if CONFIG_PET_DEBUG_STATUS_INJECT && !CONFIG_PET_TEST_SHORT_EXPIRY
+static void poll_inject_stdin(void) {
+    static char buf[32];
+    static int n;
+    static bool nb;
+    if (!nb) { fcntl(STDIN_FILENO, F_SETFL, O_NONBLOCK); nb = true; }
+    char c;
+    while (read(STDIN_FILENO, &c, 1) == 1) {
+        if (c == '\r' || c == '\n') {
+            if (n) { buf[n] = 0; n = 0; handle_inject_cmd(buf); }
+        } else if (n < (int)sizeof buf - 1) buf[n++] = (char)c;
+    }
+}
+#endif
+#endif
+
 static void app_task(void *arg) {
     (void)arg;
     uint32_t n = 0;
@@ -649,9 +720,15 @@ static void app_task(void *arg) {
                         for (int i = 0; i < 6 && demo_step() != want; i++) demo_next();
                 }
                 else if (!strcmp(cmd, "portal")) { settings(false); start_portal(false); }   // 只开热点+页面,不写 NVS
+#if CONFIG_PET_DEBUG_STATUS_INJECT || CONFIG_PET_TEST_SHORT_EXPIRY
+                else if (handle_inject_cmd(cmd)) { /* injjob / injren / injclr / injwake / injface N */ }
+#endif
                 else if (!strcmp(cmd, "reboot")) esp_restart();
             }
         }
+#if CONFIG_PET_DEBUG_STATUS_INJECT && !CONFIG_PET_TEST_SHORT_EXPIRY
+        poll_inject_stdin();
+#endif
         status_bar_poll();                  // v4.7:电量(内部 30 s 限频,I2C 不在 LVGL 线程)
         if (n % 200 == 0) check_expiry();   // 约每 10 秒
         if (++n % 600 == 0) {

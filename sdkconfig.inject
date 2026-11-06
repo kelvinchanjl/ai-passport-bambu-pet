@@ -1,0 +1,4 @@
+# 仅内部真机用:正式默认值 + 状态注入串口命令(不带 TEST 标/短过期/报文字段日志)。
+#   idf.py -B build_inject -D SDKCONFIG=build_inject/sdkconfig -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.inject" build
+# 发布包不要用这个文件。
+CONFIG_PET_DEBUG_STATUS_INJECT=y

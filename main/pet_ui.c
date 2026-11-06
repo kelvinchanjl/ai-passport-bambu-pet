@@ -126,6 +126,7 @@ static void ui_font(lv_obj_t *o, const lv_font_t *f, lv_style_selector_t sel) {
 #define UI_BGCOL ui_bgcol
 #define UI_FONT ui_font
 static void set_hidden(lv_obj_t *o, bool h) {   // v4.4.1:状态没变就不碰(每次改都会触发重绘)
+    if (!o) return;
     if (lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN) == h) return;
     if (h) lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN); else lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
 }
@@ -447,14 +448,49 @@ static void build_setup(void) {
         lv_label_set_text(t, STEPS[i]); lv_obj_set_pos(t, 46, su_y(&font_pet_12, yy));
         s_qr_step[i] = t;
     }
-    s_qr_hint = su_lbl(s_qr_box, &font_pet_12, SU_GR, 262);
-    lv_label_set_text(s_qr_hint, PET_QR_EXIT_HINT);
-    lv_obj_add_flag(s_qr_hint, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_qr_box, LV_OBJ_FLAG_HIDDEN);
 }
 
+static void destroy_qr_exit_hint(void) {
+    // UI:进入「重新配网」才建 hint,退出就删,不常驻。外观仍是 su_lbl + 文案「长按中键 返回」。
+    if (!s_qr_hint) return;
+    lv_obj_delete(s_qr_hint);
+    s_qr_hint = NULL;
+}
+static void create_qr_exit_hint(void) {
+    if (s_qr_hint || !s_qr_box) return;
+    s_qr_hint = su_lbl(s_qr_box, &font_pet_12, SU_GR, 262);
+    lv_label_set_text(s_qr_hint, PET_QR_EXIT_HINT);
+}
+
+static void teardown_setup(void) {
+    // 离开配网/绑定等页就拆掉:QR 画布和提示占 LVGL 池,不睡/不配网时不要常驻。
+    destroy_qr_exit_hint();
+    if (s_qr_box) {
+        lv_obj_delete(s_qr_box);
+        s_qr_box = s_qr = NULL;
+        s_qr_step[0] = s_qr_step[1] = s_qr_step[2] = NULL;
+    }
+    if (s_su) {
+        lv_obj_delete(s_su);
+        s_su = su_title = su_main = su_sub = su_sub2 = su_btn = su_btn_lbl = NULL;
+        su_card = su_card_t1 = su_card_t2 = su_ring = su_ring_lbl = su_rbar = NULL;
+    }
+}
+static void ensure_setup(void) {
+    if (s_su && s_qr_box) return;
+    teardown_setup();
+    build_setup();
+}
+
 void pet_ui_qr_exit_hint(bool show) {
-    set_hidden(s_qr_hint, !show);
+    if (show) {
+        ensure_setup();
+        create_qr_exit_hint();
+        set_hidden(s_qr_hint, false);
+    } else {
+        destroy_qr_exit_hint();
+    }
 }
 static int setup_dy(ui_screen_t sc) {   // 设计稿角色锚点 - 固件画布底边 222
     switch (sc) {
@@ -466,7 +502,9 @@ static int setup_dy(ui_screen_t sc) {   // 设计稿角色锚点 - 固件画布�
     }
 }
 static void setup_apply(ui_screen_t sc, const char *arg) {   // 只在换页时调用
-    bool on = sc != UI_PET && sc != UI_SETUP_QR;
+    if (sc == UI_PET) { teardown_setup(); return; }
+    ensure_setup();
+    bool on = sc != UI_SETUP_QR;
     set_hidden(s_su, !on);
     set_hidden(s_qr_box, sc != UI_SETUP_QR);
     if (sc == UI_SETUP_QR) {
@@ -518,6 +556,7 @@ static void setup_apply(ui_screen_t sc, const char *arg) {   // 只在换页时�
     lv_obj_move_foreground(s_su);
 }
 static void setup_tick(void) {   // 每次 pet_ui_update(50 ms):只做检查,值没变什么都不改
+    if (!s_su && !s_qr_box) return;
     set_hidden(s_title, true); set_hidden(s_info, true); set_hidden(s_data, true);
     set_hidden(s_bar, true); set_hidden(s_big, true); set_hidden(s_clock, true);
     int dy = setup_dy(s_screen);
@@ -588,7 +627,7 @@ void pet_ui_create(void) {
 
     build_detail();
 
-    build_setup();   // v4.5 配网/绑定/重新扫码/到期/恢复出厂
+    // 配网/绑定/扫码页按需再建:不在首页常驻 QR 画布和提示(连云谷值时省 LVGL 池,离开时 teardown)
 
     s_fade = lv_obj_create(s_scr);
     lv_obj_remove_style_all(s_fade);
@@ -776,6 +815,7 @@ void pet_ui_set_screen(ui_screen_t sc, const char *arg) {
 }
 
 void pet_ui_set_reset_progress(int secs_left, int pct) {
+    if (!su_ring_lbl || !su_rbar) return;
     UI_TXTF(su_ring_lbl, "%d", secs_left);
     if (lv_bar_get_value(su_rbar) != pct) lv_bar_set_value(su_rbar, pct, LV_ANIM_OFF);
     if (secs_left == 0) UI_TXT(su_main, "正在清除");
