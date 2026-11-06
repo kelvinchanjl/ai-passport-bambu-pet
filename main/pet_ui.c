@@ -1480,6 +1480,7 @@ void pet_ui_filament_scroll_to_end(void) { while (pet_ui_filament_scroll(1)) {} 
 #define SLP_RED     0xFF5A5A
 static lv_obj_t *s_slp_scr, *s_slp_wrap, *s_slp_time, *s_slp_bbody, *s_slp_btip, *s_slp_bfill, *s_slp_bpct;
 static lv_obj_t *s_slp_name, *s_slp_track, *s_slp_bar, *s_slp_ppct, *s_slp_img, *s_slp_hair;
+static lv_obj_t *s_slp_gone;   // 已切走、等一帧后再删的旧 B/C 页
 static lv_image_dsc_t s_slp_dsc, s_slp_hair_dsc;
 static int s_slp_face = -1;
 static bool s_anim_paused, s_render_paused;
@@ -1487,8 +1488,13 @@ static bool s_anim_paused, s_render_paused;
 void pet_ui_anim_pause(bool pause) {
     if (pause == s_anim_paused) return;
     s_anim_paused = pause;
-    if (pause) { lv_timer_pause(s_anim_timer); lv_timer_pause(s_blink_timer); }
-    else { lv_timer_resume(s_anim_timer); lv_timer_resume(s_blink_timer); }
+    if (pause) {
+        if (s_anim_timer) lv_timer_pause(s_anim_timer);
+        if (s_blink_timer) lv_timer_pause(s_blink_timer);
+    } else {
+        if (s_anim_timer) lv_timer_resume(s_anim_timer);
+        if (s_blink_timer) lv_timer_resume(s_blink_timer);
+    }
 }
 
 // A:暂停刷屏但不动对象。不用 lvgl_port_stop():它让 lv_timer_handler 每次立即返回 1 ms,
@@ -1556,12 +1562,12 @@ static void slp_battery(int cy, int soc) {
 
 void pet_ui_sleep_update(const pet_sleep_info_t *in) {
     if (!s_slp_scr || !in) return;
-    lv_obj_set_pos(s_slp_wrap, in->dx, in->dy);
-    lv_label_set_text(s_slp_time, in->time);
+    if (s_slp_wrap) lv_obj_set_pos(s_slp_wrap, in->dx, in->dy);
+    if (s_slp_time) lv_label_set_text(s_slp_time, in->time);
     if (s_slp_face == SLEEP_FACE_PET) {
-        slp_center_y(s_slp_time, 222);
+        if (s_slp_time) slp_center_y(s_slp_time, 222);
         slp_battery(252, in->soc);
-        lv_obj_set_style_image_recolor(s_slp_hair, lv_color_hex(s_fil), 0);
+        if (s_slp_hair) lv_obj_set_style_image_recolor(s_slp_hair, lv_color_hex(s_fil), 0);
         return;
     }
     int tcy, bcy; pet_sleep_b_layout(in->printing, &tcy, &bcy);
@@ -1640,16 +1646,29 @@ void pet_ui_sleep_enter(int face, const pet_sleep_info_t *in) {
 }
 
 void pet_ui_sleep_exit(void) {
-    // 先摘掉静态指针再删页面:删除过程中的事件/失效回调不能再碰到已释放的 B/C 对象。
+    // 先摘掉静态指针再切回首页。旧页先挂在 s_slp_gone,等 taskLVGL 画出首页后再 reap。
+    // 17:59 真机:B 熄屏多次 job/改名/清空后 injwake,立刻 Load access fault;
+    // 当时在 load 首页后同步 lv_obj_delete 旧页,下一帧刷新可能碰到已释放对象。
     lv_obj_t *gone = s_slp_scr;
     s_slp_scr = s_slp_wrap = s_slp_time = s_slp_bbody = s_slp_btip = s_slp_bfill = s_slp_bpct = NULL;
     s_slp_name = s_slp_track = s_slp_bar = s_slp_ppct = s_slp_img = s_slp_hair = NULL;
     s_slp_face = -1;
-    lv_obj_remove_flag(lv_layer_top(), LV_OBJ_FLAG_HIDDEN);
+    lv_obj_t *top = lv_layer_top();
+    if (top) lv_obj_remove_flag(top, LV_OBJ_FLAG_HIDDEN);
     if (s_scr) lv_screen_load(s_scr);
-    if (gone) lv_obj_delete(gone);                       // 子对象一起删
+    if (s_slp_gone && s_slp_gone != gone && s_slp_gone != lv_screen_active() && s_slp_gone != s_scr)
+        lv_obj_delete(s_slp_gone);
+    s_slp_gone = gone;
     pet_ui_anim_pause(false);
     lv_obj_t *act = lv_screen_active();
     if (act) lv_obj_invalidate(act);
-    lv_obj_invalidate(lv_layer_top());
+    if (top) lv_obj_invalidate(top);
+}
+
+void pet_ui_sleep_reap(void) {
+    lv_obj_t *gone = s_slp_gone;
+    s_slp_gone = NULL;
+    if (!gone) return;
+    if (gone == lv_screen_active() || gone == s_scr) return;
+    lv_obj_delete(gone);
 }

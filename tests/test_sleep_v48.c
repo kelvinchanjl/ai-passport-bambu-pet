@@ -252,6 +252,13 @@ int main(void) {
         pet_sleep_compose_view(SLEEP_FACE_PET, "16:06", 100, false, "", "", 0, 0, false, &tv);
         assert(tv.show_pet && !tv.show_print_row);
 
+        // 17:59 路径:B 多次 job/改名/清空后醒来再进 C,C 不得再画 B 的机器名/进度
+        assert(pet_sleep_content_changed(true, 0, 71, "InjName-3", "H2C", false, 0, 0, "InjName-3", "H2C"));
+        pet_sleep_compose_view(SLEEP_FACE_PET, "17:59", 100, false, "InjName-3", "H2C", 0, 0, true, &tv);
+        assert(tv.show_pet && !tv.show_print_row && tv.name[0] == 0 && !strcmp(tv.time, "17:59"));
+        assert(pet_sleep_actions(SLEEP_FACE_PET).sleep_screen && !pet_sleep_actions(SLEEP_FACE_PET).panel_sleep);
+        assert(pet_sleep_actions(SLEEP_FACE_CLOCK).sleep_screen);
+
         // 新 job 开始(熄屏中收到 PREPARE):再次写 NVS
         printer_status_t njob = p;
         snprintf(njob.gcode_state, sizeof njob.gcode_state, "PREPARE");

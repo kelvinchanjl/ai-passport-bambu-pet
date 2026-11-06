@@ -39,19 +39,53 @@ if "if (!s_asleep && bsp_lvgl_lock(100))" not in main or "pet_ui_update(states[c
 if "pet_sleep_content_changed" not in main:
     bad.append("B/C sleep tick does not refresh on job/name/pct change")
 
-# sleep_exit 先摘静态指针再删页面
+# sleep_exit 先摘静态指针并切回首页,但不立刻删当前 gone(17:59 B 醒 Load access fault)
 ex = ui.find("void pet_ui_sleep_exit")
+reap = ui.find("void pet_ui_sleep_reap")
 if ex < 0:
     bad.append("pet_ui_sleep_exit missing")
 else:
-    chunk = ui[ex:ex + 900]
+    end = reap if reap > ex else ex + 1200
+    chunk = ui[ex:end]
     if "lv_obj_t *gone = s_slp_scr" not in chunk:
         bad.append("sleep_exit does not snapshot s_slp_scr before nulling")
-    gone_i = chunk.find("lv_obj_t *gone")
-    del_i = chunk.find("lv_obj_delete(gone)")
-    null_i = chunk.find("s_slp_name =")
-    if gone_i < 0 or del_i < 0 or null_i < 0 or not (gone_i < null_i < del_i):
-        bad.append("sleep_exit does not null s_slp_* before deleting the screen")
+    if "s_slp_name =" not in chunk:
+        bad.append("sleep_exit does not null s_slp_* pointers")
+    if "lv_obj_delete(gone)" in chunk:
+        bad.append("sleep_exit still deletes the current sleep screen immediately")
+    if "s_slp_gone" not in chunk:
+        bad.append("sleep_exit does not defer delete via s_slp_gone")
+if reap < 0:
+    bad.append("pet_ui_sleep_reap missing")
+else:
+    rchunk = ui[reap:reap + 600]
+    if "lv_obj_delete(gone)" not in rchunk:
+        bad.append("sleep_reap does not delete the old sleep screen")
+
+# B/C 唤醒:exit → yield 一帧 → reap(A 路径里也有一次 yield,只看 exit 到 reap 之间)
+if "pet_ui_sleep_reap" not in wake:
+    bad.append("sleep_wake does not reap the old B/C screen")
+else:
+    we, wr = wake.find("pet_ui_sleep_exit"), wake.find("pet_ui_sleep_reap")
+    wy = wake.rfind("sleep_yield_frame", 0, wr) if wr >= 0 else -1
+    if not (0 <= we < wy < wr):
+        bad.append("sleep_wake does not yield a frame between sleep_exit and sleep_reap")
+if "pet_ui_sleep_reap" not in enter:
+    bad.append("sleep_enter does not reap a leftover sleep screen after the first frame")
+else:
+    er = enter.find("pet_ui_sleep_reap")
+    ey = enter.rfind("sleep_yield_frame", 0, er)
+    if not (0 <= ey < er):
+        bad.append("sleep_enter does not reap after yielding the first B/C frame")
+
+# C 刷新不得对空 hair 指针换色
+upd = ui.find("void pet_ui_sleep_update")
+if upd < 0:
+    bad.append("pet_ui_sleep_update missing")
+else:
+    uchunk = ui[upd:upd + 900]
+    if "if (s_slp_hair)" not in uchunk or "lv_obj_set_style_image_recolor(s_slp_hair" not in uchunk:
+        bad.append("C sleep_update does not null-check s_slp_hair before recolor")
 
 m = re.search(r'xTaskCreate\(app_task,\s*"pet_app",\s*(\d+)', main)
 if not m:

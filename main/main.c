@@ -487,6 +487,7 @@ static void sleep_enter(const pet_state_t *states, int cnt, int cur) {
         ESP_LOGI(TAG, "sleep screen lvgl mem used=%u/%u max=%u", (unsigned)(mm.total_size - mm.free_size), (unsigned)mm.total_size, (unsigned)mm.max_used);
     }
     sleep_yield_frame();                          // taskLVGL 画完再降背光,避免首页全亮残帧
+    if (bsp_lvgl_lock(200)) { pet_ui_sleep_reap(); bsp_lvgl_unlock(); }
     bsp_display_backlight(a.backlight_pct);       // 80 → 8%(同一套 LEDC,频率不变)
 }
 
@@ -508,7 +509,8 @@ static void sleep_wake(const char *why) {
     } else if (bsp_lvgl_lock(1000)) {
         pet_ui_sleep_exit();
         bsp_lvgl_unlock();
-        sleep_yield_frame();
+        sleep_yield_frame();                      // 先让 taskLVGL 画出首页
+        if (bsp_lvgl_lock(1000)) { pet_ui_sleep_reap(); bsp_lvgl_unlock(); }
     }
     bsp_display_backlight(SLEEP_BL_AWAKE_PCT);   // 画面到屏以后才开背光,不会先亮出旧画面
     s_asleep = false;

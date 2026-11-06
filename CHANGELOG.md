@@ -4,7 +4,8 @@
 
 ## v4.8.0 (2026-11-04)
 
-- hotfix(2026-11-06):压堆以把连云后 min_heap 稳定做到 ≥ 40,960。MQTT 入站缓冲 4096→2048、出站 1024→256(省 2,816 B 堆);过滤缓冲 FILT_CAP 4KB→3KB(省 1,024 B BSS)。熄屏页本就是进睡再建、醒来销毁。扫码页及「长按中键 返回」提示改为进入「重新配网」时再创建、退出时删除,首页不常驻。调试/测试构建增加串口命令 injjob/injren/injclr(以及 injwake/injface N)向状态源注入假的 job 更新、改名和清空;发布包不带这些命令。
+- hotfix(2026-11-06):2026-11-06 17:59 C 熄屏路径 Load access fault。当时在 inject 调试包上:B 熄屏 hold 结束 → injwake → injface 2 后立刻 Guru Meditation。测试脚本见到首行就停读,未记下 MEPC/MTVAL/backtrace。时序上 A 醒、B 进入、B 段 9 次 job/改名/清空刷新都成功,第一次从 B 醒来(切回首页后立刻 `lv_obj_delete` 旧熄屏页)即崩。现改为 `pet_ui_sleep_exit` 只摘指针并 `lv_screen_load` 首页,等 `taskLVGL` 画出一帧后再 `pet_ui_sleep_reap` 删旧页;C 刷新对 `s_slp_hair` 空指针守卫。
+- hotfix(2026-11-06):压堆以把连云后 min_heap 稳定做到 ≥ 40,960。MQTT 入站缓冲 4096→2048、出站 1024→256(省 2,816 B 堆);过滤缓冲 FILT_CAP 4KB→3KB(省 1,024 B BSS);LVGL 池 36KB→32KB(省 4,096 B 系统堆:熄屏页/配网页已不常驻,把池内空闲还回系统堆)。熄屏页本就是进睡再建、醒来销毁。扫码页及「长按中键 返回」提示改为进入「重新配网」时再创建、退出时删除,首页不常驻。调试/测试构建增加串口命令 injjob/injren/injclr(以及 injwake/injface N)向状态源注入假的 job 更新、改名和清空;发布包不带这些命令。
 - hotfix(2026-11-06):B 熄屏约 5 分钟后收到 job 结束(`#0 job … end=…`)出现 Load access fault。熄屏期间不再改首页/详情 LVGL 对象;B/C 在 job/改名/清空时立刻刷新熄屏页;唤醒删页前先摘掉静态指针。主机补 job 更新期间 B/C 的回归用例。
 - hotfix(2026-11-06):已配置工牌从设置进「重新配网」后,扫码页长按中键退出(关热点和配网页,回到设置「重新配网」那一行,NVS 不回滚;手机已提交的增删/绑定以提交为准)。首次配网和登录过期重新扫码不加退出。底部提示「长按中键 返回」(font_pet_12 / #8C8C8C / 顶 y=262 / 宽 220,字库不改)。
 - hotfix(2026-11-06):B 时钟熄屏进页后 task_wdt,CPU0=`pet_app` 卡在 `lv_draw_unit_draw_letter`,屏上仍是首页、背光未降。根因是 `sleep_enter`/`sleep_wake` 在 `pet_app`(栈 5120)持锁调用 `lv_refr_now`,把本该跑在 `taskLVGL`(栈 7168)上的整屏刷新压到自己栈上;A 唤醒时同一路径已把 `stack_hw` 打到 312。现改为让出 CPU 给 LVGL 任务画完再改背光;主循环里的 `states[]`/`printer_status_t` 改静态;B 机器名改 `LONG_CLIP` 并定高、未打印时隐藏。主机补 `pet_sleep_compose_view`(A/B/C 标签文本)和源码契约测试。`pet_app` 栈曾试 5120→6144,真机 B 段 min_heap 40,784 低于 40 KB 红线,已调回 5120(刷屏路径已交回 `taskLVGL`,不再依赖加大栈)。

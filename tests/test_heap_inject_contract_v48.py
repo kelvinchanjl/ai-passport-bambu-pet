@@ -22,8 +22,14 @@ if ".buffer = { .size = 4096, .out_size = 1024 }" in cloud:
 # Sleep panel already create-on-enter / destroy-on-exit
 if "void pet_ui_sleep_enter" not in ui or "void pet_ui_sleep_exit" not in ui:
     bad.append("sleep panel enter/exit missing")
+if "void pet_ui_sleep_reap" not in ui:
+    bad.append("sleep reap (deferred delete) missing")
 if "lv_obj_delete(gone)" not in ui:
-    bad.append("sleep exit does not delete the sleep screen")
+    bad.append("old sleep screen is never deleted")
+if "CONFIG_LV_MEM_SIZE_KILOBYTES=32" not in defaults:
+    bad.append("LVGL pool is not 32 KB (expected 36→32, return 4 KB to system heap)")
+if "CONFIG_LV_MEM_SIZE_KILOBYTES=36" in defaults:
+    bad.append("LVGL pool still 36 KB in sdkconfig.defaults")
 
 # Hint + setup not resident on home
 if "create_qr_exit_hint()" not in ui or "destroy_qr_exit_hint()" not in ui:

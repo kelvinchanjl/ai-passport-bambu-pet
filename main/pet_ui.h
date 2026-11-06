@@ -70,6 +70,8 @@ typedef struct {
 void pet_ui_sleep_enter(int face, const pet_sleep_info_t *info);
 void pet_ui_sleep_update(const pet_sleep_info_t *info);
 void pet_ui_sleep_exit(void);
+// 唤醒切回首页并让 taskLVGL 画出一帧后再删旧 B/C 页,避免删页太早碰到已释放对象
+void pet_ui_sleep_reap(void);
 // A/全部:暂停/恢复角色动画与闪烁定时器(C 和 A 都停;不释放对象)
 void pet_ui_anim_pause(bool pause);
 // A:暂停/恢复 LVGL 刷屏(关失效登记 + 暂停刷新定时器,不释放对象);恢复时整屏失效
