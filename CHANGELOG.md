@@ -4,6 +4,8 @@
 
 ## v4.8.0 (2026-11-04)
 
+- hotfix(2026-11-06):B 熄屏约 5 分钟后收到 job 结束(`#0 job … end=…`)出现 Load access fault。熄屏期间不再改首页/详情 LVGL 对象;B/C 在 job/改名/清空时立刻刷新熄屏页;唤醒删页前先摘掉静态指针。主机补 job 更新期间 B/C 的回归用例。
+- hotfix(2026-11-06):已配置工牌从设置进「重新配网」后,扫码页长按中键退出(关热点和配网页,回到设置「重新配网」那一行,NVS 不回滚;手机已提交的增删/绑定以提交为准)。首次配网和登录过期重新扫码不加退出。底部提示「长按中键 返回」(font_pet_12 / #8C8C8C / 顶 y=262 / 宽 220,字库不改)。
 - hotfix(2026-11-06):B 时钟熄屏进页后 task_wdt,CPU0=`pet_app` 卡在 `lv_draw_unit_draw_letter`,屏上仍是首页、背光未降。根因是 `sleep_enter`/`sleep_wake` 在 `pet_app`(栈 5120)持锁调用 `lv_refr_now`,把本该跑在 `taskLVGL`(栈 7168)上的整屏刷新压到自己栈上;A 唤醒时同一路径已把 `stack_hw` 打到 312。现改为让出 CPU 给 LVGL 任务画完再改背光;主循环里的 `states[]`/`printer_status_t` 改静态;B 机器名改 `LONG_CLIP` 并定高、未打印时隐藏。主机补 `pet_sleep_compose_view`(A/B/C 标签文本)和源码契约测试。`pet_app` 栈曾试 5120→6144,真机 B 段 min_heap 40,784 低于 40 KB 红线,已调回 5120(刷屏路径已交回 `taskLVGL`,不再依赖加大栈)。
 - 新增:**休眠(熄屏)**。无操作 2 分钟(设置页「休眠」可选 关 / 2 分钟 / 5 分钟,默认 2 分钟,存 NVS `petcfg/sleep_min`)后熄屏;「熄屏画面」三选一(`petcfg/sleep_face`,默认全黑):
   - 全黑:背光立即 80 → 0(不渐变),屏幕 DISPOFF + SLPIN,LVGL 暂停刷屏(关失效登记 + 暂停刷新定时器,不释放对象)。醒来 SLPOUT(与 SLPIN 间隔 ≥ 120 ms)→ 整屏刷新 → DISPON → 背光 80。

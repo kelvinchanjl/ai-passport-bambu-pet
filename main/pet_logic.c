@@ -544,3 +544,16 @@ int pet_set_step(int sel, int dir, int count) {
     int n = sel + (dir > 0 ? 1 : -1);
     return n < 0 ? 0 : n >= count ? count - 1 : n;
 }
+
+bool pet_portal_exit_allowed(bool configured, bool reauth) {
+    return configured && !reauth;   // 仅已配置 + 非重新登录
+}
+
+pet_portal_exit_plan_t pet_portal_exit_plan(bool configured, bool reauth) {
+    pet_portal_exit_plan_t p = { 0 };
+    p.allow = pet_portal_exit_allowed(configured, reauth);
+    p.stop_hotspot = p.allow;
+    p.restore_prev_page = p.allow;
+    p.rollback_nvs = false;
+    return p;
+}

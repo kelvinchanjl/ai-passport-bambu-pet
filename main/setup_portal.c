@@ -39,6 +39,10 @@ static bool s_reauth;
 static char s_ap[24], s_bound_name[48];
 static volatile portal_state_t s_state;
 static bambu_tokens_t *s_tok;          // 登录结果(堆,~3 KB)
+static httpd_handle_t s_httpd;
+static TaskHandle_t s_dns_task;
+static volatile bool s_dns_run;
+static volatile int s_dns_fd = -1;
 static char s_uid[24], s_account[64];
 static bambu_device_t s_devs[BAMBU_MAX_DEVICES];
 static int s_ndev;
@@ -371,11 +375,19 @@ static void dns_task(void *arg) {
     (void)arg;
     int s = socket(AF_INET, SOCK_DGRAM, 0);
     struct sockaddr_in a = { .sin_family = AF_INET, .sin_port = htons(53), .sin_addr.s_addr = htonl(INADDR_ANY) };
-    if (s < 0 || bind(s, (struct sockaddr *)&a, sizeof a) < 0) { ESP_LOGE(TAG, "dns bind"); vTaskDelete(NULL); }
+    if (s < 0 || bind(s, (struct sockaddr *)&a, sizeof a) < 0) {
+        ESP_LOGE(TAG, "dns bind");
+        s_dns_task = NULL;
+        vTaskDelete(NULL);
+    }
+    s_dns_fd = s;
+    struct timeval tv = { .tv_sec = 0, .tv_usec = 200000 };
+    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
     uint8_t buf[512];
-    for (;;) {
+    while (s_dns_run) {
         struct sockaddr_in from; socklen_t fl = sizeof from;
         int n = recvfrom(s, buf, sizeof buf - 16, 0, (struct sockaddr *)&from, &fl);
+        if (!s_dns_run) break;
         if (n < 12) continue;
         buf[2] = 0x81; buf[3] = 0x80;                 // 标准应答,无错误
         buf[6] = 0; buf[7] = 1; buf[8] = buf[9] = buf[10] = buf[11] = 0;   // 1 个回答
@@ -387,6 +399,10 @@ static void dns_task(void *arg) {
         memcpy(buf + p, ans, sizeof ans);
         sendto(s, buf, p + sizeof ans, 0, (struct sockaddr *)&from, fl);
     }
+    close(s);
+    s_dns_fd = -1;
+    s_dns_task = NULL;
+    vTaskDelete(NULL);
 }
 
 bool setup_portal_start(app_config_t *cfg, bool reauth) {
@@ -401,6 +417,7 @@ bool setup_portal_start(app_config_t *cfg, bool reauth) {
     hc.max_uri_handlers = 12;      // v4.8:默认 8 个放不下(原 6 个 + Wi-Fi 管理 4 个),多出来的会注册失败
     hc.lru_purge_enable = true;
     if (httpd_start(&h, &hc) != ESP_OK) return false;
+    s_httpd = h;
     const httpd_uri_t uris[] = {
         { .uri = "/", .method = HTTP_GET, .handler = h_index },
         { .uri = "/api/scan", .method = HTTP_GET, .handler = h_scan },
@@ -416,8 +433,23 @@ bool setup_portal_start(app_config_t *cfg, bool reauth) {
     for (size_t i = 0; i < sizeof uris / sizeof uris[0]; i++)
         if (httpd_register_uri_handler(h, &uris[i]) != ESP_OK) ESP_LOGE(TAG, "register %s failed", uris[i].uri);
     httpd_register_err_handler(h, HTTPD_404_NOT_FOUND, h_redirect);
-    xTaskCreate(dns_task, "dns", 3072, NULL, 4, NULL);
+    s_dns_run = true;
+    xTaskCreate(dns_task, "dns", 3072, NULL, 4, &s_dns_task);
     s_state = PORTAL_WAITING;
     ESP_LOGI(TAG, "portal up on %s (%s)", s_ap, reauth ? "reauth" : "setup");
     return true;
+}
+
+void setup_portal_stop(void) {
+    s_dns_run = false;
+    int fd = s_dns_fd;
+    if (fd >= 0) shutdown(fd, SHUT_RDWR);
+    if (s_httpd) { httpd_stop(s_httpd); s_httpd = NULL; }
+    net_ap_stop();
+    for (int i = 0; i < 25 && s_dns_task; i++) vTaskDelay(pdMS_TO_TICKS(20));
+    if (s_dns_task) { vTaskDelete(s_dns_task); s_dns_task = NULL; }
+    if (s_dns_fd >= 0) { close(s_dns_fd); s_dns_fd = -1; }
+    if (s_tok) { free(s_tok); s_tok = NULL; }
+    s_state = PORTAL_IDLE;
+    ESP_LOGI(TAG, "portal stopped (nvs kept)");
 }

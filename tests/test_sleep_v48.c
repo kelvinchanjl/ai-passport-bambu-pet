@@ -201,6 +201,66 @@ int main(void) {
     assert(v.show_pet && !v.show_print_row && !strcmp(v.time, "--:--") && !strcmp(v.batt, "0%"));
     puts("A/B/C sleep label text (--:--, time, printing, long/missing-glyph name): PASS");
 
+    // ---- B/C 熄屏期间的 job 更新:新 job、名字变长、job 清空、完成应亮屏 ----
+    {
+        pet_job_t j; pet_job_init(&j);
+        printer_status_t p; printer_status_reset(&p);
+        p.valid = true;
+        snprintf(p.job_id, sizeof p.job_id, "284262958");
+        snprintf(p.gcode_state, sizeof p.gcode_state, "RUNNING");
+        p.percent = 0;   // 亲眼看到开头才记 start
+        int64_t T = 1793947103LL;
+        assert(pet_job_update(&j, &p, T) && j.start == T && j.end == 0);
+        p.percent = 10;
+        assert(!pet_job_update(&j, &p, T + 60));          // 同一 job 进展:不必写 NVS
+
+        pet_state_t slp[PET_MAX_PRINTERS];
+        for (int i = 0; i < PET_MAX_PRINTERS; i++) slp[i] = PET_IDLE;
+        slp[0] = PET_PRINT;
+        assert(pet_sleep_pick_printer(slp, 1, 0) == 0);
+
+        pet_sleep_view_t tv;
+        pet_sleep_compose_view(SLEEP_FACE_CLOCK, "16:05", 100, true, "P1", "P1S", 0, 10, true, &tv);
+        assert(tv.show_print_row && !strcmp(tv.name, "P1") && !strcmp(tv.pct, "10%"));
+
+        char longer[48]; memset(longer, 'B', 40); longer[40] = 0;
+        assert(pet_sleep_content_changed(true, 0, 10, "P1", "P1S", true, 0, 10, longer, "P1S"));  // 名字变长
+        assert(!pet_sleep_content_changed(true, 0, 10, longer, "P1S", true, 0, 10, longer, "P1S"));
+        pet_sleep_compose_view(SLEEP_FACE_CLOCK, "16:05", 100, true, longer, "P1S", 0, 40, true, &tv);
+        assert(tv.show_print_row && !strcmp(tv.name, longer) && !strcmp(tv.pct, "40%"));
+
+        // job 清空 / 不再打印:B 应收起名字和进度
+        assert(pet_sleep_content_changed(true, 0, 40, longer, "P1S", false, 0, 0, longer, "P1S"));
+        pet_sleep_compose_view(SLEEP_FACE_CLOCK, "16:06", 100, false, longer, "P1S", 0, 0, true, &tv);
+        assert(!tv.show_print_row && tv.name[0] == 0 && tv.time_cy == 136);
+
+        // FINISH:job 记录写 end,完成应变亮(不是「第一次看到」)
+        snprintf(p.gcode_state, sizeof p.gcode_state, "FINISH"); p.percent = 100;
+        assert(pet_job_update(&j, &p, T + 5528) && j.end == T + 5528);
+        assert(pet_job_elapsed_min(&j, &p) == 92);
+        assert(!pet_job_update(&j, &p, T + 9999));         // 结束时间不被后来的推送覆盖
+        slp[0] = PET_DONE;
+        pet_state_t wprev[PET_MAX_PRINTERS];
+        wprev[0] = PET_PRINT;
+        for (int i = 1; i < PET_MAX_PRINTERS; i++) wprev[i] = PET_STATE_COUNT;
+        int wpi = -1;
+        assert(pet_wake_check(wprev, slp, 1, &wpi) == 1 && wpi == -1);
+
+        // C:job 更新(打印中或清空)都不画机器名
+        pet_sleep_compose_view(SLEEP_FACE_PET, "16:05", 100, true, longer, "P1S", 0, 40, true, &tv);
+        assert(tv.show_pet && !tv.show_print_row && tv.name[0] == 0);
+        pet_sleep_compose_view(SLEEP_FACE_PET, "16:06", 100, false, "", "", 0, 0, false, &tv);
+        assert(tv.show_pet && !tv.show_print_row);
+
+        // 新 job 开始(熄屏中收到 PREPARE):再次写 NVS
+        printer_status_t njob = p;
+        snprintf(njob.gcode_state, sizeof njob.gcode_state, "PREPARE");
+        snprintf(njob.job_id, sizeof njob.job_id, "999888777");
+        njob.percent = 0;
+        assert(pet_job_update(&j, &njob, T + 6000) && strcmp(j.job, "999888777") == 0 && j.end == 0);
+    }
+    puts("job update during B/C sleep (long name, clear, FINISH wake, new job): PASS");
+
     puts("test_sleep_v48 OK");
     return 0;
 }

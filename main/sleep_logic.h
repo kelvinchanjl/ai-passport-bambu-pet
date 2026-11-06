@@ -85,3 +85,8 @@ typedef struct {
 void pet_sleep_compose_view(uint8_t face, const char *time, int soc, bool printing,
                             const char *name, const char *product, int idx, int pct,
                             bool name_ok, pet_sleep_view_t *out);
+// B 熄屏内容是否因 job 更新/改名/清空而变(变了就要立刻 pet_ui_sleep_update,不必等 60 s)
+bool pet_sleep_content_changed(bool was_printing, int was_idx, int was_pct,
+                               const char *was_name, const char *was_product,
+                               bool printing, int idx, int pct,
+                               const char *name, const char *product);

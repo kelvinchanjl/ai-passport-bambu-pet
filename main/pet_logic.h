@@ -257,6 +257,17 @@ int pet_set_step(int sel, int dir, int count);
 void pet_ap_name(const uint8_t mac[6], char *out, size_t len);          // "Passport-%02X%02X"(SoftAP MAC 后两字节)
 void pet_ap_qr(const char *ap, char *out, size_t len);                  // "WIFI:T:nopass;S:<ap>;;"
 void pet_ap_step(const char *ap, char *out, size_t len);                // "连上热点 <ap>"
+// v4.8:已配置工牌从设置进「重新配网」后,长按中键可退出扫码页(关热点,NVS 不回滚)。
+// 首次配网、登录过期重新扫码不加退出。提示文案用半角空格,字库不改。
+#define PET_QR_EXIT_HINT "长按中键 返回"
+bool pet_portal_exit_allowed(bool configured, bool reauth);
+typedef struct {
+    bool allow;
+    bool stop_hotspot;
+    bool restore_prev_page;
+    bool rollback_nvs;          // 永远 false:手机已提交的 Wi-Fi/绑定以提交为准
+} pet_portal_exit_plan_t;
+pet_portal_exit_plan_t pet_portal_exit_plan(bool configured, bool reauth);
 // ---- v4.4.1 没数据时的整页「连接中 / 未连上」----
 // 进入"没数据"后前 30 秒 = 连接中;超过 30 秒 = 未连上;收到第一条带温度的完整报文立刻 = 有数据(不做过渡)。
 // 数据丢了(在线窗口过期/断线)重新从「连接中」计 30 秒。演示模式永远算有数据。

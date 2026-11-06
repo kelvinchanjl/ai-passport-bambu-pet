@@ -157,10 +157,30 @@ static void ui_screen(ui_screen_t sc, const char *arg) {
     if (bsp_lvgl_lock(200)) { pet_ui_set_screen(sc, arg); bsp_lvgl_unlock(); }
 }
 
+static bool s_portal_cancellable;     // 已配置 + 非 reauth:扫码页可长按退出
+static bool s_portal_return_settings; // 退出后回到设置页(进配网前)
+
 static void start_portal(bool reauth) {
     if (s_portal_on) return;
+    pet_portal_exit_plan_t plan = pet_portal_exit_plan(s_cloud_ok, reauth);
+    s_portal_cancellable = plan.allow;
+    s_portal_return_settings = plan.restore_prev_page;
     s_portal_on = setup_portal_start(&s_cfg, reauth);
-    if (s_portal_on) ui_screen(UI_SETUP_QR, setup_portal_ap_name());
+    if (s_portal_on) {
+        ui_screen(UI_SETUP_QR, setup_portal_ap_name());
+        if (bsp_lvgl_lock(200)) { pet_ui_qr_exit_hint(s_portal_cancellable); bsp_lvgl_unlock(); }
+    }
+}
+
+static void stop_portal_to_prev(void) {
+    if (!s_portal_on) return;
+    setup_portal_stop();                  // 关热点/HTTP/DNS;已写入 NVS 的提交不回滚
+    s_portal_on = false;
+    s_portal_cancellable = false;
+    ui_screen(UI_PET, NULL);
+    if (s_portal_return_settings) { s_set_sel = SET_REPAIR; settings(true); }
+    else header_refresh(false, 0);
+    ESP_LOGI(TAG, "portal exit heap free=%u min=%u", (unsigned)esp_get_free_heap_size(), (unsigned)esp_get_minimum_free_heap_size());
 }
 
 static void header_refresh(bool animate, int dir) {
@@ -318,6 +338,7 @@ static void handle_key(const key_ev_t *k) {
         case BSP_BTN_LONG:
             pet_okkey_long(&s_ok);
             if (pet_ui_screen() == UI_RESET) return;
+            if (pet_ui_screen() == UI_SETUP_QR && s_portal_cancellable) { stop_portal_to_prev(); return; }
             if (pet_ui_screen() == UI_PET && !in_set) settings(true);
             return;
         default:
@@ -465,6 +486,7 @@ static void sleep_enter(const pet_state_t *states, int cnt, int cur) {
 
 static void sleep_wake(const char *why) {
     if (!s_asleep) return;
+    ESP_LOGI(TAG, "sleep wake begin (%s) face=%u", why ? why : "?", (unsigned)s_slp_face);
     if (s_slp_face == SLEEP_FACE_BLACK) {
         if (bsp_lvgl_lock(1000)) {
             bsp_display_panel_sleep(false);       // SLPOUT(>= 120 ms 间隔 + 驱动内 100 ms)
@@ -516,12 +538,22 @@ static void sleep_tick(const pet_state_t *states, int cnt, int cur) {
         if (s_slp_face != SLEEP_FACE_BLACK) {
             time_t t = time(NULL); struct tm tm; localtime_r(&t, &tm);
             int key = t > 1700000000 ? tm.tm_hour * 60 + tm.tm_min : -1;
-            if (pet_sleep_refresh_due(s_slp_key, key, s_slp_ms, now)) {
+            bool due = pet_sleep_refresh_due(s_slp_key, key, s_slp_ms, now);
+            bool was_printing = s_slp_info.printing;
+            int was_idx = s_slp_info.idx, was_pct = s_slp_info.pct;
+            static char was_name[sizeof s_slp_info.name], was_product[sizeof s_slp_info.product];
+            snprintf(was_name, sizeof was_name, "%s", s_slp_info.name);
+            snprintf(was_product, sizeof was_product, "%s", s_slp_info.product);
+            sleep_fill_info(states, cnt, cur);
+            bool info_changed = pet_sleep_content_changed(was_printing, was_idx, was_pct, was_name, was_product,
+                                                          s_slp_info.printing, s_slp_info.idx, s_slp_info.pct,
+                                                          s_slp_info.name, s_slp_info.product);
+            if (due) {
                 s_slp_ms = now; s_slp_refresh_n++;
                 if (pet_sleep_shift_due(key, s_slp_refresh_n)) s_slp_shift_pos = (s_slp_shift_pos + 1) % 4;
-                sleep_fill_info(states, cnt, cur);
-                if (bsp_lvgl_lock(200)) { pet_ui_sleep_update(&s_slp_info); bsp_lvgl_unlock(); }
+                pet_sleep_shift_xy(s_slp_shift_pos, &s_slp_info.dx, &s_slp_info.dy);
             }
+            if ((due || info_changed) && bsp_lvgl_lock(200)) { pet_ui_sleep_update(&s_slp_info); bsp_lvgl_unlock(); }
         }
         return;
     }
@@ -557,7 +589,9 @@ static void app_task(void *arg) {
             if (link != LINK_DEMO) {   // 演示数据自带 elapsed_min
                 if (pet_job_update(&s_jobs[i], &st, (int64_t)time(NULL))) {
                     job_save(i);
-                    ESP_LOGI(TAG, "#%d job %s start=%lld end=%lld", i, s_jobs[i].job, (long long)s_jobs[i].start, (long long)s_jobs[i].end);
+                    s_jobs[i].job[sizeof s_jobs[i].job - 1] = 0;
+                    ESP_LOGI(TAG, "#%d job %s start=%lld end=%lld%s", i, s_jobs[i].job[0] ? s_jobs[i].job : "?",
+                             (long long)s_jobs[i].start, (long long)s_jobs[i].end, s_asleep ? " (asleep)" : "");
                 }
                 st.elapsed_min = pet_job_elapsed_min(&s_jobs[i], &st);
             }
@@ -575,11 +609,12 @@ static void app_task(void *arg) {
         sleep_tick(states, cnt, cur);   // v4.8 休眠:计时、自动亮屏、B/C 每 60 s 刷新
         int jump = (status_store_active() == SRC_DEMO) ? -1
                  : pet_switch_tick(&s_switch, states, (uint32_t)(esp_timer_get_time() / 1000));
-        if (jump >= 0 && pet_ui_screen() == UI_PET && !pet_ui_settings_open()) {
+        if (jump >= 0 && !s_asleep && pet_ui_screen() == UI_PET && !pet_ui_settings_open()) {
             select_printer(jump, jump > cur ? 1 : -1, false);
             continue;
         }
-        if (online != last_online || (n % 100) == 0) { last_online = online; header_refresh(false, 0); }   // 绿点 / 改名
+        if (!s_asleep && (online != last_online || (n % 100) == 0)) { last_online = online; header_refresh(false, 0); }   // 绿点 / 改名
+        else last_online = online;
         // v4.4.1:收到第一条带温度的报文才算有数据;之前前 30 秒「连接中」,之后「未连上」
         bool has_data = status_store_active() == SRC_DEMO || (online && cur_st.valid && cur_st.n_nozzles > 0);
         bool mqtt_up = status_store_active() == SRC_CLOUD && link == LINK_ONLINE;   // v4.4.3:MQTT 已连上
@@ -587,13 +622,15 @@ static void app_task(void *arg) {
                                                  (uint32_t)(esp_timer_get_time() / 1000));
         static pet_conn_state_t last_cs = PET_CONN_DATA;
         if (cs != last_cs) { ESP_LOGI(TAG, "conn -> %s", cs == PET_CONN_DATA ? "data" : cs == PET_CONN_CONNECTING ? "connecting" : cs == PET_CONN_NODATA ? "nodata (mqtt up, no report)" : "failed"); last_cs = cs; }
-        if (bsp_lvgl_lock(100)) {
+        // 熄屏时不要再改首页/详情对象:FINISH 等状态变化会走 start_transition/apply_state,
+        // 真机 B 段曾在 "#0 job … end=…" 之后 Load access fault。亮屏(含自动唤醒)之后 s_asleep 已清,这里照常刷新。
+        if (!s_asleep && bsp_lvgl_lock(100)) {
             pet_ui_set_conn(cs);
             pet_ui_set_demo_step(status_store_active() == SRC_DEMO ? demo_step() : -1);
             pet_ui_update(states[cur], &cur_st, link);
             bsp_lvgl_unlock();
         }
-        if (pet_ui_filament_open()) {                // v4.3:耗材页开着时每轮刷新(数据没变 UI 不重画)
+        if (!s_asleep && pet_ui_filament_open()) {                // v4.3:耗材页开着时每轮刷新(数据没变 UI 不重画)
             status_store_get_ams(cur, &s_ams_buf);
             if (bsp_lvgl_lock(100)) { pet_ui_set_filament(&s_ams_buf); pet_ui_filament_set_spinning(states[cur] == PET_PRINT); bsp_lvgl_unlock(); }
         }

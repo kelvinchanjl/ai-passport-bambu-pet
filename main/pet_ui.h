@@ -76,3 +76,5 @@ void pet_ui_anim_pause(bool pause);
 void pet_ui_render_pause(bool pause);
 // 立刻整屏刷新一次(lv_refr_now);调用后像素可能仍在 SPI 队列里,开背光前用 bsp_display_wait_idle/bsp_display_on 等完
 void pet_ui_refresh_now(void);
+// 扫码页底部「长按中键 返回」:默认隐藏,仅设置→重新配网时显示
+void pet_ui_qr_exit_hint(bool show);

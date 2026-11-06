@@ -136,3 +136,16 @@ void pet_sleep_compose_view(uint8_t face, const char *time, int soc, bool printi
         pet_sleep_fmt_pct(pct, out->pct, sizeof out->pct);
     }
 }
+
+bool pet_sleep_content_changed(bool was_printing, int was_idx, int was_pct,
+                               const char *was_name, const char *was_product,
+                               bool printing, int idx, int pct,
+                               const char *name, const char *product) {
+    if (was_printing != printing || was_idx != idx || was_pct != pct) return true;
+    if (!was_name) was_name = "";
+    if (!name) name = "";
+    if (!was_product) was_product = "";
+    if (!product) product = "";
+    return strcmp(was_name, name) != 0 || strcmp(was_product, product) != 0;
+}
+

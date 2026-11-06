@@ -348,7 +348,7 @@ LV_FONT_DECLARE(font_pet_10);
 LV_FONT_DECLARE(font_pet_13);
 static lv_obj_t *s_su, *su_title, *su_main, *su_sub, *su_sub2, *su_btn, *su_btn_lbl, *su_card, *su_card_t1, *su_card_t2;
 static lv_obj_t *su_ring, *su_ring_lbl, *su_rbar;
-static lv_obj_t *s_qr_box, *s_qr, *s_qr_step[3];
+static lv_obj_t *s_qr_box, *s_qr, *s_qr_step[3], *s_qr_hint;
 static int su_asc(const lv_font_t *f) {   // Noto Sans CJK 在 PIL 里的 ascent(getmetrics()[0])
     if (f == &font_pet_10) return 12;
     if (f == &font_pet_12) return 14;
@@ -447,7 +447,14 @@ static void build_setup(void) {
         lv_label_set_text(t, STEPS[i]); lv_obj_set_pos(t, 46, su_y(&font_pet_12, yy));
         s_qr_step[i] = t;
     }
+    s_qr_hint = su_lbl(s_qr_box, &font_pet_12, SU_GR, 262);
+    lv_label_set_text(s_qr_hint, PET_QR_EXIT_HINT);
+    lv_obj_add_flag(s_qr_hint, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_qr_box, LV_OBJ_FLAG_HIDDEN);
+}
+
+void pet_ui_qr_exit_hint(bool show) {
+    set_hidden(s_qr_hint, !show);
 }
 static int setup_dy(ui_screen_t sc) {   // 设计稿角色锚点 - 固件画布底边 222
     switch (sc) {
@@ -466,6 +473,7 @@ static void setup_apply(ui_screen_t sc, const char *arg) {   // 只在换页时�
         char q[96], st[64]; pet_ap_qr(arg, q, sizeof q); pet_ap_step(arg, st, sizeof st);   // v4.5.2:与 net.c 的 SSID 同源
         lv_qrcode_update(s_qr, q, strlen(q));
         UI_TXT(s_qr_step[1], st);
+        set_hidden(s_qr_hint, true);                     // 默认隐藏;重新配网由 pet_ui_qr_exit_hint(true) 打开
         lv_obj_move_foreground(s_qr_box);
         return;
     }
@@ -1592,15 +1600,16 @@ void pet_ui_sleep_enter(int face, const pet_sleep_info_t *in) {
 }
 
 void pet_ui_sleep_exit(void) {
-    lv_obj_remove_flag(lv_layer_top(), LV_OBJ_FLAG_HIDDEN);
-    if (s_slp_scr) {
-        lv_screen_load(s_scr);
-        lv_obj_delete(s_slp_scr);                         // 子对象一起删
-        s_slp_scr = s_slp_wrap = s_slp_time = s_slp_bbody = s_slp_btip = s_slp_bfill = s_slp_bpct = NULL;
-        s_slp_name = s_slp_track = s_slp_bar = s_slp_ppct = s_slp_img = s_slp_hair = NULL;
-    }
+    // 先摘掉静态指针再删页面:删除过程中的事件/失效回调不能再碰到已释放的 B/C 对象。
+    lv_obj_t *gone = s_slp_scr;
+    s_slp_scr = s_slp_wrap = s_slp_time = s_slp_bbody = s_slp_btip = s_slp_bfill = s_slp_bpct = NULL;
+    s_slp_name = s_slp_track = s_slp_bar = s_slp_ppct = s_slp_img = s_slp_hair = NULL;
     s_slp_face = -1;
+    lv_obj_remove_flag(lv_layer_top(), LV_OBJ_FLAG_HIDDEN);
+    if (s_scr) lv_screen_load(s_scr);
+    if (gone) lv_obj_delete(gone);                       // 子对象一起删
     pet_ui_anim_pause(false);
-    lv_obj_invalidate(lv_screen_active());
+    lv_obj_t *act = lv_screen_active();
+    if (act) lv_obj_invalidate(act);
     lv_obj_invalidate(lv_layer_top());
 }

@@ -221,6 +221,14 @@ esp_err_t net_ap_start(char *name_out, size_t len) {
     return e;
 }
 
+void net_ap_stop(void) {
+    if (!s_ap_on) return;
+    s_ap_on = false;
+    esp_wifi_set_mode(WIFI_MODE_STA);   // 关掉 SoftAP,STA 继续
+}
+
+bool net_ap_active(void) { return s_ap_on; }
+
 int net_scan(wifi_ap_record_t *out, int max) {
     if ((s_roam_on && s_roam.st == ROAM_SCANNING) || s_roam_scan_pending) return 0;   // v4.8:漫游的扫描正在进行或它的 SCAN_DONE 还没处理,配网页稍后重试(避免两路同时取/清扫描结果)
     s_scanning = true;

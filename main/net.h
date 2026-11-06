@@ -26,6 +26,9 @@ bool net_sta_has_ip(void);
 bool net_wait_ip(int timeout_ms);
 // 开 SoftAP(开放热点),名字写入 name_out(如 Passport-3F2A)。
 esp_err_t net_ap_start(char *name_out, size_t len);
+// 关 SoftAP,回到纯 STA(已连上的家里 Wi-Fi 不断)。未开过热点则空操作。
+void net_ap_stop(void);
+bool net_ap_active(void);
 // 扫描,返回条数(去重、按信号强度)。
 int net_scan(wifi_ap_record_t *out, int max);
 typedef void (*net_ip_cb_t)(bool up);

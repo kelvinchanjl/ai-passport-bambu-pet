@@ -33,6 +33,26 @@ if "sleep_yield_frame" not in bc:
 if "pet_ui_refresh_now" in wake or "lv_refr_now" in wake:
     bad.append("sleep_wake still sync-refreshes on pet_app")
 
+# 熄屏时不得改首页对象(真机 B 段 job 结束后曾 Load access fault)
+if "if (!s_asleep && bsp_lvgl_lock(100))" not in main or "pet_ui_update(states[cur]" not in main:
+    bad.append("pet_ui_update is not skipped while asleep")
+if "pet_sleep_content_changed" not in main:
+    bad.append("B/C sleep tick does not refresh on job/name/pct change")
+
+# sleep_exit 先摘静态指针再删页面
+ex = ui.find("void pet_ui_sleep_exit")
+if ex < 0:
+    bad.append("pet_ui_sleep_exit missing")
+else:
+    chunk = ui[ex:ex + 900]
+    if "lv_obj_t *gone = s_slp_scr" not in chunk:
+        bad.append("sleep_exit does not snapshot s_slp_scr before nulling")
+    gone_i = chunk.find("lv_obj_t *gone")
+    del_i = chunk.find("lv_obj_delete(gone)")
+    null_i = chunk.find("s_slp_name =")
+    if gone_i < 0 or del_i < 0 or null_i < 0 or not (gone_i < null_i < del_i):
+        bad.append("sleep_exit does not null s_slp_* before deleting the screen")
+
 m = re.search(r'xTaskCreate\(app_task,\s*"pet_app",\s*(\d+)', main)
 if not m:
     bad.append("pet_app xTaskCreate not found")
