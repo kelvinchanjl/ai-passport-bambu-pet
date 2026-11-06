@@ -41,8 +41,8 @@
 #include <string.h>
 #include <time.h>
 #if CONFIG_PET_DEBUG_STATUS_INJECT && !CONFIG_PET_TEST_SHORT_EXPIRY
-#include <fcntl.h>
-#include <unistd.h>
+#include "driver/usb_serial_jtag.h"
+#include "driver/usb_serial_jtag_vfs.h"
 #endif
 
 static const char *TAG = "pet";
@@ -619,12 +619,20 @@ static bool handle_inject_cmd(const char *cmd) {
 }
 #if CONFIG_PET_DEBUG_STATUS_INJECT && !CONFIG_PET_TEST_SHORT_EXPIRY
 static void poll_inject_stdin(void) {
+    // USB-Serial-JTAG 控制台不会把主机写入交到 stdin;与测试版 devcap 一样走驱动读字节。
+    // 不另起任务:在 pet_app 里非阻塞读。rx/tx 各 256 B,大约多占 0.5 KB 堆。
     static char buf[32];
     static int n;
-    static bool nb;
-    if (!nb) { fcntl(STDIN_FILENO, F_SETFL, O_NONBLOCK); nb = true; }
-    char c;
-    while (read(STDIN_FILENO, &c, 1) == 1) {
+    static bool inited;
+    if (!inited) {
+        usb_serial_jtag_driver_config_t cfg = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
+        cfg.rx_buffer_size = 256;
+        cfg.tx_buffer_size = 256;
+        if (usb_serial_jtag_driver_install(&cfg) == ESP_OK) usb_serial_jtag_vfs_use_driver();
+        inited = true;
+    }
+    uint8_t c;
+    while (usb_serial_jtag_read_bytes(&c, 1, 0) > 0) {
         if (c == '\r' || c == '\n') {
             if (n) { buf[n] = 0; n = 0; handle_inject_cmd(buf); }
         } else if (n < (int)sizeof buf - 1) buf[n++] = (char)c;
